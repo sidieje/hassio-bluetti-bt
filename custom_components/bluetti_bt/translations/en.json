@@ -86,6 +86,24 @@
       "ac_p3_voltage": {
         "name": "AC Phase 3 Voltage"
       },
+      "b_voltage": {
+        "name": "Battery Voltage"
+      },
+      "b_current": {
+        "name": "Battery Current"
+      },
+      "b_io_power": {
+        "name": "Battery I/O Power"
+      },
+      "b_alt_voltage": {
+        "name": "Alternative Battery Voltage"
+      },
+      "b_alt_current": {
+        "name": "Alternative Battery Current"
+      },
+      "b_alt_io_power": {
+        "name": "Alternative Battery I/O Power"
+      },
       "total_battery_percent": {
         "name": "Battery SOC"
       },
@@ -127,6 +145,15 @@
       },
       "dc_input_current": {
         "name": "DC Input Current"
+      },
+      "dc_2_output_voltage": {
+        "name": "DC 2 Output Voltage"
+      },
+      "dc_2_output_current": {
+        "name": "DC 2 Output Current"
+      },
+      "dc_2_output_power_total": {
+        "name": "DC 2 Output Power"
       },
       "dc_input_power": {
         "name": "DC Input Power"
