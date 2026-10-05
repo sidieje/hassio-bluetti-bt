@@ -96,13 +96,13 @@
         "name": "Battery I/O Power"
       },
       "b_alt_v": {
-        "name": "Alternative Battery Voltage"
+        "name": "Alternator Battery Voltage"
       },
       "b_alt_c": {
-        "name": "Alternative Battery Current"
+        "name": "Alternator Battery Current"
       },
       "b_alt_io_p": {
-        "name": "Alternative Battery I/O Power"
+        "name": "Alternator Battery I/O Power"
       },
       "total_battery_percent": {
         "name": "Battery SOC"

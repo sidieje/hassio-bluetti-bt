@@ -86,6 +86,24 @@
       "ac_p3_voltage": {
         "name": "AC Phase 3 Spannung"
       },
+      "b_v": {
+        "name": "Batteriespannung"
+      },
+      "b_c": {
+        "name": "Batteriestrom"
+      },
+      "b_io_p": {
+        "name": "Batterie I/O Leistung"
+      },
+      "b_alt_v": {
+        "name": "Alternator-Batteriespannung"
+      },
+      "b_alt_c": {
+        "name": "Alternator-Batteriestrom"
+      },
+      "b_alt_io_p": {
+        "name": "Alternator-Batterie I/O Leistung"
+      },
       "total_battery_percent": {
         "name": "Batterie Ladestand"
       },
@@ -127,6 +145,15 @@
       },
       "dc_input_current": {
         "name": "DC Eingang Stromstärke"
+      },
+      "dc_2_o_v": {
+        "name": "DC 2 Ausgangsspannung"
+      },
+      "dc_2_o_c": {
+        "name": "DC 2 Ausgangsstrom"
+      },
+      "dc_2_o_p_total": {
+        "name": "DC 2 Ausgangsleistung"
       },
       "dc_input_power": {
         "name": "DC Eingang Leistung"
