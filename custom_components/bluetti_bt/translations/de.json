@@ -143,6 +143,9 @@
       "ctrl_ups_mode": {
         "name": "UPS Modus"
       },
+      "ctrl_system_on_off": {
+        "name": "System An/Aus"
+      },
       "dc_input_current": {
         "name": "DC Eingang Stromstärke"
       },

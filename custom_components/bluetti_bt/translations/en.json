@@ -143,6 +143,9 @@
        "ctrl_ups_mode": {
         "name": "UPS Mode"
       },
+       "ctrl_system_on_off": {
+        "name": "System On/Off"
+      },
       "dc_input_current": {
         "name": "DC Input Current"
       },

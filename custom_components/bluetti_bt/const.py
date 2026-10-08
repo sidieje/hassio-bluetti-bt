@@ -6,4 +6,3 @@ MANUFACTURER = "Bluetti"
 CONF_OPTIONS = "options"
 
 DATA_COORDINATOR = "coordinator"
-DATA_LOCK = "lock"

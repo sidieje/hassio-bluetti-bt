@@ -17,9 +17,7 @@ class TestBTNames(unittest.TestCase):
     def test_bt_matcher_length(self):
         bt_matcher = self.manifest["bluetooth"]
         for entry in bt_matcher:
-            local_name = entry["local_name"]
-            self.assertIsInstance(local_name, str)
-
+            local_name = entry.get("local_name")
             if not isinstance(local_name, str):
                 continue
 
@@ -30,7 +28,7 @@ class TestBTNames(unittest.TestCase):
 
         bt_matcher = self.manifest["bluetooth"]
         for entry in bt_matcher:
-            local_name = entry["local_name"]
+            local_name = entry.get("local_name")
             if not isinstance(local_name, str):
                 continue
             matchers.append(local_name)

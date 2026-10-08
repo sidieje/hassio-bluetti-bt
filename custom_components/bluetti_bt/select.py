@@ -4,8 +4,6 @@ from __future__ import annotations
 import asyncio
 import logging
 import async_timeout
-from bleak import BleakScanner
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -16,12 +14,12 @@ from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
 
-from bluetti_bt_lib import build_device, BluettiDevice, DeviceWriter, FieldName
+from bluetti_bt_lib import build_device, BluettiDevice, FieldName
 from bluetti_bt_lib.fields import SelectField
 
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
-from .const import DATA_COORDINATOR, DATA_LOCK, DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
 from .utils import mac_loggable, unique_id_logable
 
@@ -33,15 +31,10 @@ async def async_setup_entry(
 
     config = FullDeviceConfig.from_dict(entry.data)
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
-    lock = hass.data[DOMAIN][entry.entry_id][DATA_LOCK]
 
     logger = logging.getLogger(
         f"{__name__}.{mac_loggable(config.address).replace(':', '_')}"
     )
-
-    if config.use_encryption is True:
-        logger.info("Controls are disabled on encrypted devices")
-        return None
 
     if config is None or not isinstance(coordinator, PollingCoordinator):
         logger.error("No coordinator found")
@@ -66,7 +59,6 @@ async def async_setup_entry(
                 coordinator,
                 device_info,
                 field,
-                lock,
                 category=category,
                 logger=logger,
             )
@@ -85,7 +77,6 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
         coordinator: PollingCoordinator,
         device_info: DeviceInfo,
         field: SelectField,
-        lock: asyncio.Lock,
         category: EntityCategory | None = None,
         logger: logging.Logger = logging.getLogger(),
     ):
@@ -100,7 +91,6 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
         self._field = field
         self._response_key = field.name
         self._unavailable_counter = 5
-        self._lock = lock
         self._attr_options = [e.name for e in field.e]
 
         self._attr_has_entity_name = True
@@ -189,33 +179,35 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
     async def write_to_device(self, state: str):
         """Write to device."""
 
-        try:
-            device = await BleakScanner.find_device_by_address(self._address, timeout=5)
+        for attempt in range(1, 4):
+            try:
+                async with async_timeout.timeout(60):
+                    written = await self.coordinator.async_write(
+                        self._field.name, state
+                    )
 
-            if device is None:
+                if not written:
+                    raise ConnectionError("Device rejected write")
+
+                # Wait until the device has changed value, otherwise reading
+                # the register might reset it
+                await asyncio.sleep(3)
+                await self.coordinator.async_request_refresh()
+
+                response_data = (self.coordinator.data or {}).get(self._response_key)
+                if getattr(response_data, "name", response_data) != state:
+                    raise ConnectionError("Device did not confirm the change")
+
                 return
 
-            client = await establish_connection(
-                BleakClientWithServiceCache,
-                device,
-                device.name or "Unknown Device",
-                max_attempts=10,
-            )
+            except (TimeoutError, ConnectionError) as err:
+                self._logger.warning(
+                    "Write attempt %d/3 failed for %s: %s",
+                    attempt,
+                    mac_loggable(self._address),
+                    err,
+                )
+                if attempt < 3:
+                    await asyncio.sleep(1)
 
-            if not client.is_connected:
-                return
-
-            writer = DeviceWriter(client, self._bluetti_device, lock=self._lock)
-
-            async with async_timeout.timeout(15):
-                # Send command
-                await writer.write(self._field.name, state)
-
-                # Wait until device has changed value, otherwise reading register might reset it
-                await asyncio.sleep(5)
-
-        except TimeoutError:
-            self._logger.error("Timed out for device %s", mac_loggable(self._address))
-            return None
-
-        await self.coordinator.async_request_refresh()
+        self._logger.error("Unable to write %s after 3 attempts", self._response_key)
