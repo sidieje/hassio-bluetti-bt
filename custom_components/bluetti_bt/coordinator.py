@@ -216,17 +216,6 @@ class PollingCoordinator(DataUpdateCoordinator):
         so entities can quickly look up their data.
         """
 
-        # Check if device is connected
-        if (
-            bluetooth.async_address_present(
-                self.hass, self.config.address, connectable=True
-            )
-            is False
-        ):
-            self.logger.warning("Device not connected")
-            self.last_update_success = False
-            return None
-
         if self.bluetti_device is None:
             self.logger.error(
                 "Reader not initialized - device type may be unsupported: %s",
