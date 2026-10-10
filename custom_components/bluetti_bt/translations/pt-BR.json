@@ -47,6 +47,12 @@
       "ac_p3_current": { "name": "Corrente CA Fase 3" },
       "ac_p3_power": { "name": "Potência CA Fase 3" },
       "ac_p3_voltage": { "name": "Tensão CA Fase 3" },
+      "b_v": { "name": "Tensão da bateria" },
+      "b_c": { "name": "Corrente da bateria" },
+      "b_io_p": { "name": "Potência de I/O da bateria" },
+      "b_alt_v": { "name": "Tensão da bateria do alternador" },
+      "b_alt_c": { "name": "Corrente da bateria do alternador" },
+      "b_alt_io_p": { "name": "Potência de I/O da bateria do alternador" },
 
       "total_battery_percent": { "name": "Carga da bateria (SOC)" },
 
@@ -55,6 +61,9 @@
       "dc_input_voltage": { "name": "Tensão de entrada CC" },
       "dc_output_on": { "name": "Saída CC ligada" },
       "dc_output_power": { "name": "Potência de saída CC" },
+      "dc_2_o_v": { "name": "Tensão de saída CC 2" },
+      "dc_2_o_c": { "name": "Corrente de saída CC 2" },
+      "dc_2_o_p_total": { "name": "Potência de saída CC 2" },
 
       "device_type": { "name": "Tipo de dispositivo" },
       "device_sn": { "name": "Número de série" },

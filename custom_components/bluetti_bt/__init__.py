@@ -5,17 +5,15 @@ import asyncio
 import re
 import logging
 from typing import List
-from homeassistant.components import bluetooth
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .utils import mac_loggable
 from .const import (
     DATA_COORDINATOR,
-    DATA_LOCK,
     DOMAIN,
     MANUFACTURER,
 )
@@ -50,9 +48,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     logger.debug("Init Bluetti BT Integration")
 
-    if not bluetooth.async_address_present(hass, config.address):
-        raise ConfigEntryNotReady("Bluetti device not present")
-
     # Create data structure
     hass.data.setdefault(DOMAIN, {})
     hass.data[DOMAIN].setdefault(entry.entry_id, {})
@@ -67,9 +62,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         config,
         lock,
     )
-    await coordinator.async_config_entry_first_refresh()
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except (UpdateFailed, TimeoutError, OSError) as err:
+        logger.warning(
+            "Initial Bluetti poll failed; continuing setup and retrying later: %s",
+            err,
+        )
     hass.data[DOMAIN][entry.entry_id].setdefault(DATA_COORDINATOR, coordinator)
-    hass.data[DOMAIN][entry.entry_id].setdefault(DATA_LOCK, lock)
 
     logger.debug("Creating entities")
     # Setup platforms
@@ -78,6 +78,26 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     logger.debug("Setup done")
 
     return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if not unload_ok:
+        return False
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    coordinator = entry_data.get(DATA_COORDINATOR)
+
+    if isinstance(coordinator, PollingCoordinator):
+        # Close the persistent bluetooth connection
+        await coordinator.async_unload()
+
+    hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+
+    return unload_ok
 
 
 def device_info(entry: ConfigEntry):

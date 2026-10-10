@@ -10,6 +10,7 @@
         { "local_name": "AC7*" },
         { "local_name": "AC8*" },
         { "local_name": "AP3*" },
+        { "local_name": "CHA*" },
         { "local_name": "EB3A*" },
         { "local_name": "EBOX*" },
         { "local_name": "EL1*" },
@@ -32,6 +33,8 @@
     "integration_type": "device",
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/Patrick762/hassio-bluetti-bt/issues",
-    "requirements": ["bluetti-bt-lib==0.1.7"],
+    "requirements": [
+        "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment"
+    ],
     "version": "0.2.2"
 }
