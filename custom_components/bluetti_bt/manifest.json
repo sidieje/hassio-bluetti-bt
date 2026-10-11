@@ -36,5 +36,5 @@
     "requirements": [
         "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment"
     ],
-    "version": "1.0.2"
+    "version": "1.0.3"
 }
