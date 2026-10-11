@@ -3,6 +3,14 @@
 [![Validate with hassfest](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml/badge.svg)](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml)
 [![HACS Action](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/HACS.yml/badge.svg)](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/HACS.yml)
 
+### Charger 2 Support
+
+This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read and control support for the **BLUETTI Charger 2**.
+
+The Charger 2 uses a different register layout and control protocol from other supported BLUETTI devices. Its system power and silent charging controls share a multipurpose register rather than using independent Boolean registers, requiring additional read-modify-write handling in the Bluetooth communication layer.
+
+Charger 2 support has been tested with physical hardware, including reading device data and operating both controls. As these changes introduce device-specific handling beyond the original implementation, support remains experimental. This fork is maintained independently, and feedback, testing, and issue reports are welcome.
+
 Bluetti Integration for Home Assistant
 
 The current [Roadmap for this project and the library can be found here](https://github.com/users/Patrick762/projects/4)

@@ -395,8 +395,14 @@
       "ctrl_power_off": {
         "name": "Poweroff"
       },
+      "ctrl_silent_charging": {
+        "name": "Silent Charging"
+      },
       "ctrl_split_phase": {
         "name": "Split Phase"
+      },
+      "ctrl_system_on_off": {
+        "name": "System On/Off"
       },
       "ac_output_on": {
         "name": "AC Output"
