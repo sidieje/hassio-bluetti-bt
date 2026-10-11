@@ -176,6 +176,7 @@ class PollingCoordinator(DataUpdateCoordinator):
                     use_encryption=self.config.use_encryption,
                 ),
                 self.lock,
+                reader=self.reader,
             )
             # The reader owns the notifier and the encryption handshake
             writer.attach(encryption=self.reader.encryption if self.reader else None)

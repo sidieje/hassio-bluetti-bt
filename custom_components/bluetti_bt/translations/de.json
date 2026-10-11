@@ -143,6 +143,9 @@
       "ctrl_ups_mode": {
         "name": "UPS Modus"
       },
+      "ctrl_silent_charging": {
+        "name": "Stilles Laden"
+      },
       "ctrl_system_on_off": {
         "name": "System An/Aus"
       },
@@ -333,6 +336,12 @@
       },
       "ctrl_power_off": {
         "name": "Ausschalter"
+      },
+      "ctrl_silent_charging": {
+        "name": "Stilles Laden"
+      },
+      "ctrl_system_on_off": {
+        "name": "System An/Aus"
       }
     },
     "select": {
