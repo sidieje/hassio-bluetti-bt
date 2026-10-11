@@ -140,10 +140,13 @@
       "ctrl_led_mode": {
         "name": "LED Mode"
       },
-       "ctrl_ups_mode": {
+      "ctrl_ups_mode": {
         "name": "UPS Mode"
       },
-       "ctrl_system_on_off": {
+      "ctrl_silent_charging": {
+        "name": "Silent Charging"
+      },
+      "ctrl_system_on_off": {
         "name": "System On/Off"
       },
       "dc_input_current": {
@@ -333,6 +336,12 @@
       },
       "ctrl_power_off": {
         "name": "Poweroff"
+      },
+      "ctrl_silent_charging": {
+        "name": "Silent Charging"
+      },
+      "ctrl_system_on_off": {
+        "name": "System On/Off"
       }
     },
     "select": {
