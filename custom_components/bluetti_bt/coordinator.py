@@ -289,6 +289,36 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         return bool(await writer.write(field, value))
 
+    async def async_write_verified(self, field: str, value: Any) -> Any:
+        """Write a value and return the device's verified state."""
+        writer = await self._async_get_writer()
+
+        if writer is None:
+            self.logger.warning(
+                "Unable to write %s: no connection",
+                field,
+            )
+            return None
+
+        if self.config.use_encryption and self.reader is not None:
+            if not self.reader.encryption.is_ready_for_commands:
+                await self.reader.read()
+
+            if not self.reader.encryption.is_ready_for_commands:
+                self.logger.warning(
+                    "Encryption handshake not finished, not writing %s",
+                    field,
+                )
+                return None
+
+        result = await writer.write_verified(field, value)
+
+        if result.values is not None and isinstance(self.data, dict):
+            updated_data = {**self.data, **result.values}
+            self.async_set_updated_data(updated_data)
+
+        return result
+
     async def async_unload(self) -> None:
         """Close the persistent connection and cancel offline retries."""
         self._unloading = True

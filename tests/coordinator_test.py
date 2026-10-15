@@ -206,6 +206,97 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
             mark_offline.call_args.args[0],
         )
 
+    async def test_verified_write_updates_coordinator_data(self):
+        """Verified read-back values are published to coordinator data."""
+        coordinator = self.make_coordinator()
+        coordinator.data = {"existing_field": 10}
+        coordinator.async_set_updated_data = Mock()
+
+        result = SimpleNamespace(
+            write_succeeded=True,
+            readback_succeeded=True,
+            verified=True,
+            values={
+                "ctrl_system_on_off": True,
+                "ctrl_silent_charging": False,
+            },
+        )
+        writer = SimpleNamespace(
+            write_verified=AsyncMock(return_value=result)
+        )
+
+        with patch.object(
+            coordinator,
+            "_async_get_writer",
+            new=AsyncMock(return_value=writer),
+        ):
+            returned = await coordinator.async_write_verified(
+                "ctrl_system_on_off", True
+            )
+
+        self.assertIs(returned, result)
+        writer.write_verified.assert_awaited_once_with(
+            "ctrl_system_on_off", True
+        )
+        coordinator.async_set_updated_data.assert_called_once_with(
+            {
+                "existing_field": 10,
+                "ctrl_system_on_off": True,
+                "ctrl_silent_charging": False,
+            }
+        )
+
+    async def test_verified_write_without_writer_returns_none(self):
+        """A verified write without a connection returns None."""
+        coordinator = self.make_coordinator()
+
+        with patch.object(
+            coordinator,
+            "_async_get_writer",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await coordinator.async_write_verified(
+                "ctrl_system_on_off", True
+            )
+
+        self.assertIsNone(result)
+        coordinator.logger.warning.assert_called_once_with(
+            "Unable to write %s: no connection",
+            "ctrl_system_on_off",
+        )
+
+    async def test_verified_write_stops_if_encryption_handshake_fails(self):
+        """A verified write must not proceed without ready encryption."""
+        coordinator = self.make_coordinator()
+        coordinator.config.use_encryption = True
+
+        reader = SimpleNamespace(
+            encryption=SimpleNamespace(is_ready_for_commands=False),
+            read=AsyncMock(),
+        )
+        coordinator.reader = reader
+
+        writer = SimpleNamespace(
+            write_verified=AsyncMock(),
+        )
+
+        with patch.object(
+            coordinator,
+            "_async_get_writer",
+            new=AsyncMock(return_value=writer),
+        ):
+            result = await coordinator.async_write_verified(
+                "ctrl_system_on_off", True
+            )
+
+        self.assertIsNone(result)
+        reader.read.assert_awaited_once_with()
+        writer.write_verified.assert_not_awaited()
+        coordinator.logger.warning.assert_called_once_with(
+            "Encryption handshake not finished, not writing %s",
+            "ctrl_system_on_off",
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
