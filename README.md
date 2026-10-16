@@ -5,13 +5,13 @@
 
 ### Charger 2 and Apex 300 Read and Write Support
 
-This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read and control support for the **BLUETTI Charger 2**, and **Apex 300**.
+This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read and control support for the **BLUETTI Charger 2**, **EL100mini** and **Apex 300**.
 
 The Charger 2 uses a different register layout and control protocol from other supported BLUETTI devices. Its system power and silent charging controls share a multipurpose register rather than using independent Boolean registers, requiring additional read-modify-write handling in the Bluetooth communication layer.
 
 Charger 2 support has been tested with physical hardware, including reading device data and operating both controls. As these changes introduce device-specific handling beyond the original implementation, support remains experimental. This fork is maintained independently, and feedback, testing, and issue reports are welcome.
 
-Apex 300 support adds controls for AC and DC outputs, AC Eco Mode, DC Eco Mode, Power Lifting, UPS charging mode, and Eco timers, along with many additional sensor readings.
+EL100mini and Apex 300 support adds controls for AC and DC outputs, AC Eco Mode, DC Eco Mode, Power Lifting, UPS charging mode, and Eco timers, along with many additional sensor readings.
 
 A Bluetooth integration for BLUETTI power stations in Home Assistant.
 
