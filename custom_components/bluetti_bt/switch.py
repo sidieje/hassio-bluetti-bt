@@ -1,7 +1,6 @@
 """Bluetti BT switches."""
 
 from __future__ import annotations
-import asyncio
 import logging
 import async_timeout
 from homeassistant.components.switch import SwitchEntity
@@ -192,37 +191,52 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         await self.write_to_device(False)
 
     async def write_to_device(self, state: bool):
-        """Write to device."""
+        """Write to the device and verify the reported state."""
+        self._logger.debug(
+            "Write %s=%s on %s",
+            self._response_key,
+            state,
+            mac_loggable(self._address),
+        )
 
-        for attempt in range(1, 4):
-            try:
-                async with async_timeout.timeout(60):
-                    written = await self.coordinator.async_write(
-                        self._field.name, state
-                    )
-
-                if not written:
-                    raise ConnectionError("Device rejected write")
-
-                # Give the device time to apply the change, then verify it by
-                # reading the register back
-                await asyncio.sleep(3)
-                await self.coordinator.async_request_refresh()
-
-                response_data = (self.coordinator.data or {}).get(self._response_key)
-                if response_data != state:
-                    raise ConnectionError("Device did not confirm the change")
-
-                return
-
-            except (TimeoutError, ConnectionError) as err:
-                self._logger.warning(
-                    "Write attempt %d/3 failed for %s: %s",
-                    attempt,
-                    mac_loggable(self._address),
-                    err,
+        try:
+            async with async_timeout.timeout(60):
+                result = await self.coordinator.async_write_verified(
+                    self._field.name, state
                 )
-                if attempt < 3:
-                    await asyncio.sleep(1)
+        except (TimeoutError, ConnectionError) as err:
+            self._logger.error(
+                "Write operation failed for %s: %s",
+                self._response_key,
+                err,
+            )
+            return
 
-        self._logger.error("Unable to write %s after 3 attempts", self._response_key)
+        if result is None or not result.write_succeeded:
+            self._logger.error(
+                "Write failed for %s; device state was not confirmed",
+                self._response_key,
+            )
+            return
+
+        if not result.readback_succeeded:
+            self._logger.warning(
+                "Write sent for %s, but read-back failed; not retrying",
+                self._response_key,
+            )
+            return
+
+        if not result.verified:
+            self._logger.warning(
+                "Write state mismatch for %s: requested %s; device reports %s",
+                self._response_key,
+                state,
+                (result.values or {}).get(self._response_key),
+            )
+            return
+
+        self._logger.debug(
+            "Write verified for %s: %s",
+            self._response_key,
+            state,
+        )

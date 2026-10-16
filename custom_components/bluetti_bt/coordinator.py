@@ -22,6 +22,8 @@ from bluetti_bt_lib.bluetooth import DeviceWriterConfig
 from .utils import mac_loggable
 from .types import FullDeviceConfig
 
+OFFLINE_RETRY_DELAYS = (20, 30, 60)
+
 
 class PollingCoordinator(DataUpdateCoordinator):
     """Polling coordinator.
@@ -57,14 +59,18 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.logger.info("Creating client for %s", config.name)
         self.bluetti_device: BluettiDevice | None = build_device(config.name)
 
-        if self.bluetti_device is None:
-            self.logger.error("Device is unknown type: %s", config.name)
-            return
-
         self.client: BleakClient | None = None
         self.reader: DeviceReader | None = None
         self.writer: DeviceWriter | None = None
         self.disconnected = False
+        self._offline = False
+        self._retry_attempt = False
+        self._retry_task: asyncio.Task[None] | None = None
+        self._unloading = False
+
+        if self.bluetti_device is None:
+            self.logger.error("Device is unknown type: %s", config.name)
+            return
 
     def _on_disconnected(self, _: BleakClient) -> None:
         """Mark the connection as stale so it gets rebuilt on next use."""
@@ -74,6 +80,10 @@ class PollingCoordinator(DataUpdateCoordinator):
     async def _async_get_client(self) -> BleakClient | None:
         """Return the shared connection, opening it when needed."""
         if self.bluetti_device is None:
+            return None
+
+        # Regular polling must not bypass the offline retry backoff.
+        if self._offline and not self._retry_attempt:
             return None
 
         async with self.connection_lock:
@@ -92,8 +102,8 @@ class PollingCoordinator(DataUpdateCoordinator):
             )
 
             if device is None:
-                self.logger.warning(
-                    "Device not found: %s", mac_loggable(self.config.address)
+                self._mark_offline(
+                    f"Device not found: {mac_loggable(self.config.address)}"
                 )
                 return None
 
@@ -103,37 +113,111 @@ class PollingCoordinator(DataUpdateCoordinator):
                     device,
                     device.name or "Unknown Device",
                     disconnected_callback=self._on_disconnected,
-                    max_attempts=10,
+                    max_attempts=self.config.max_retries,
                 )
             except (BleakError, OSError, TimeoutError) as err:
-                self.logger.warning(
-                    "Unable to connect to %s: %s",
-                    mac_loggable(self.config.address),
-                    err,
-                )
                 self.client = None
+                self._mark_offline(
+                    f"Unable to connect to "
+                    f"{mac_loggable(self.config.address)}: {err}"
+                )
                 return None
 
             self.disconnected = False
 
             # Reader and writer share the connection, so they are recreated
-            # whenever the connection is rebuilt
-            self.reader = DeviceReader(
-                self.config.address,
-                self.bluetti_device,
-                self.hass.loop.create_future,
-                DeviceReaderConfig(
-                    self.config.polling_timeout,
-                    self.config.use_encryption,
-                ),
-                self.lock,
-                ble_client=self.client,
-            )
+            # whenever the connection is rebuilt.
+            try:
+                reader = DeviceReader(
+                    self.config.address,
+                    self.bluetti_device,
+                    self.hass.loop.create_future,
+                    DeviceReaderConfig(
+                        self.config.polling_timeout,
+                        self.config.use_encryption,
+                    ),
+                    self.lock,
+                    ble_client=self.client,
+                )
+            except Exception as err:
+                await self._async_drop_connection("Reader initialization failed")
+                self._mark_offline(
+                    f"Unable to initialize reader for "
+                    f"{mac_loggable(self.config.address)}: {err}"
+                )
+                return None
+
+            self.reader = reader
             self.writer = None
 
-            self.logger.debug("Connected to %s", mac_loggable(self.config.address))
+            if self._offline:
+                self.logger.info(
+                    "Bluetooth device recovered: %s",
+                    mac_loggable(self.config.address),
+                )
+            self._offline = False
 
+            self.logger.debug("Connected to %s", mac_loggable(self.config.address))
             return self.client
+
+    def _mark_offline(self, message: str) -> None:
+        """Mark the device offline and ensure a retry task is running."""
+        if not self._offline:
+            self.logger.warning(message)
+        else:
+            self.logger.debug("Device remains offline: %s", message)
+
+        self._offline = True
+
+        if self._unloading:
+            return
+
+        if self._retry_task is None or self._retry_task.done():
+            self._retry_task = self.hass.async_create_task(
+                self._async_retry_loop()
+            )
+
+    async def _async_retry_loop(self) -> None:
+        """Retry discovery independently of the normal polling interval."""
+        delay_index = 0
+
+        try:
+            while self._offline and not self._unloading:
+                await asyncio.sleep(OFFLINE_RETRY_DELAYS[delay_index])
+
+                if not self._offline or self._unloading:
+                    break
+
+                self._retry_attempt = True
+                try:
+                    # Attempt the connection directly so a coalesced
+                    # coordinator refresh cannot skip the retry.
+                    client = await self._async_get_client()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as err:
+                    self.logger.debug("Offline retry failed: %s", err)
+                    client = None
+                finally:
+                    self._retry_attempt = False
+
+                if client is not None and self.reader is not None:
+                    try:
+                        await self.async_request_refresh()
+                    except asyncio.CancelledError:
+                        raise
+                    except Exception as err:
+                        self.logger.debug(
+                            "Refresh after reconnect failed: %s", err
+                        )
+
+                delay_index = min(
+                    delay_index + 1,
+                    len(OFFLINE_RETRY_DELAYS) - 1,
+                )
+        finally:
+            self._retry_attempt = False
+            self._retry_task = None
 
     async def _async_drop_connection(self, reason: str) -> None:
         """Close the shared connection. Requires connection_lock to be held."""
@@ -205,8 +289,48 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         return bool(await writer.write(field, value))
 
+    async def async_write_verified(self, field: str, value: Any) -> Any:
+        """Write a value and return the device's verified state."""
+        writer = await self._async_get_writer()
+
+        if writer is None:
+            self.logger.warning(
+                "Unable to write %s: no connection",
+                field,
+            )
+            return None
+
+        if self.config.use_encryption and self.reader is not None:
+            if not self.reader.encryption.is_ready_for_commands:
+                await self.reader.read()
+
+            if not self.reader.encryption.is_ready_for_commands:
+                self.logger.warning(
+                    "Encryption handshake not finished, not writing %s",
+                    field,
+                )
+                return None
+
+        result = await writer.write_verified(field, value)
+
+        if result.values is not None and isinstance(self.data, dict):
+            updated_data = {**self.data, **result.values}
+            self.async_set_updated_data(updated_data)
+
+        return result
+
     async def async_unload(self) -> None:
-        """Close the persistent connection."""
+        """Close the persistent connection and cancel offline retries."""
+        self._unloading = True
+
+        retry_task, self._retry_task = self._retry_task, None
+        if retry_task is not None:
+            retry_task.cancel()
+            try:
+                await retry_task
+            except asyncio.CancelledError:
+                pass
+
         async with self.connection_lock:
             await self._async_drop_connection("Unloading config entry")
 
