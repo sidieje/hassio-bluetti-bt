@@ -79,6 +79,16 @@ class PollingCoordinator(DataUpdateCoordinator):
 
     async def _async_get_client(self) -> BleakClient | None:
         """Return the shared connection, opening it when needed."""
+        async with self.connection_lock:
+            return await self._async_get_client_unlocked()
+
+    async def _async_get_client_unlocked(self) -> BleakClient | None:
+        """Connection setup. The caller must hold connection_lock.
+
+        Split out because asyncio.Lock is not reentrant: the write path
+        holds connection_lock across the whole write, so it needs the
+        setup logic without reacquiring the lock.
+        """
         if self.bluetti_device is None:
             return None
 
@@ -86,79 +96,78 @@ class PollingCoordinator(DataUpdateCoordinator):
         if self._offline and not self._retry_attempt:
             return None
 
-        async with self.connection_lock:
-            if (
-                self.client is not None
-                and self.client.is_connected
-                and not self.disconnected
-            ):
-                return self.client
-
-            if self.client is not None:
-                await self._async_drop_connection("Connection lost")
-
-            device = await BleakScanner.find_device_by_address(
-                self.config.address, timeout=5
-            )
-
-            if device is None:
-                self._mark_offline(
-                    f"Device not found: {mac_loggable(self.config.address)}"
-                )
-                return None
-
-            try:
-                self.client = await establish_connection(
-                    BleakClientWithServiceCache,
-                    device,
-                    device.name or "Unknown Device",
-                    disconnected_callback=self._on_disconnected,
-                    max_attempts=self.config.max_retries,
-                )
-            except (BleakError, OSError, TimeoutError) as err:
-                self.client = None
-                self._mark_offline(
-                    f"Unable to connect to "
-                    f"{mac_loggable(self.config.address)}: {err}"
-                )
-                return None
-
-            self.disconnected = False
-
-            # Reader and writer share the connection, so they are recreated
-            # whenever the connection is rebuilt.
-            try:
-                reader = DeviceReader(
-                    self.config.address,
-                    self.bluetti_device,
-                    self.hass.loop.create_future,
-                    DeviceReaderConfig(
-                        self.config.polling_timeout,
-                        self.config.use_encryption,
-                    ),
-                    self.lock,
-                    ble_client=self.client,
-                )
-            except Exception as err:
-                await self._async_drop_connection("Reader initialization failed")
-                self._mark_offline(
-                    f"Unable to initialize reader for "
-                    f"{mac_loggable(self.config.address)}: {err}"
-                )
-                return None
-
-            self.reader = reader
-            self.writer = None
-
-            if self._offline:
-                self.logger.info(
-                    "Bluetooth device recovered: %s",
-                    mac_loggable(self.config.address),
-                )
-            self._offline = False
-
-            self.logger.debug("Connected to %s", mac_loggable(self.config.address))
+        if (
+            self.client is not None
+            and self.client.is_connected
+            and not self.disconnected
+        ):
             return self.client
+
+        if self.client is not None:
+            await self._async_drop_connection("Connection lost")
+
+        device = await BleakScanner.find_device_by_address(
+            self.config.address, timeout=5
+        )
+
+        if device is None:
+            self._mark_offline(
+                f"Device not found: {mac_loggable(self.config.address)}"
+            )
+            return None
+
+        try:
+            self.client = await establish_connection(
+                BleakClientWithServiceCache,
+                device,
+                device.name or "Unknown Device",
+                disconnected_callback=self._on_disconnected,
+                max_attempts=self.config.max_retries,
+            )
+        except (BleakError, OSError, TimeoutError) as err:
+            self.client = None
+            self._mark_offline(
+                f"Unable to connect to "
+                f"{mac_loggable(self.config.address)}: {err}"
+            )
+            return None
+
+        self.disconnected = False
+
+        # Reader and writer share the connection, so they are recreated
+        # whenever the connection is rebuilt.
+        try:
+            reader = DeviceReader(
+                self.config.address,
+                self.bluetti_device,
+                self.hass.loop.create_future,
+                DeviceReaderConfig(
+                    self.config.polling_timeout,
+                    self.config.use_encryption,
+                ),
+                self.lock,
+                ble_client=self.client,
+            )
+        except Exception as err:
+            await self._async_drop_connection("Reader initialization failed")
+            self._mark_offline(
+                f"Unable to initialize reader for "
+                f"{mac_loggable(self.config.address)}: {err}"
+            )
+            return None
+
+        self.reader = reader
+        self.writer = None
+
+        if self._offline:
+            self.logger.info(
+                "Bluetooth device recovered: %s",
+                mac_loggable(self.config.address),
+            )
+        self._offline = False
+
+        self.logger.debug("Connected to %s", mac_loggable(self.config.address))
+        return self.client
 
     def _mark_offline(self, message: str) -> None:
         """Mark the device offline and ensure a retry task is running."""
@@ -245,8 +254,14 @@ class PollingCoordinator(DataUpdateCoordinator):
                 self.logger.debug("Error while disconnecting client: %s", err)
 
     async def _async_get_writer(self) -> DeviceWriter | None:
-        """Return the writer sharing the connection with the reader."""
-        client = await self._async_get_client()
+        """Return the writer sharing the connection with the reader.
+
+        The caller must hold connection_lock: the returned writer is only
+        valid while the shared connection cannot be torn down underneath
+        it, which is why the write methods hold the lock across the whole
+        write.
+        """
+        client = await self._async_get_client_unlocked()
 
         if client is None or self.bluetti_device is None:
             return None
@@ -269,49 +284,62 @@ class PollingCoordinator(DataUpdateCoordinator):
         return self.writer
 
     async def async_write(self, field: str, value: Any) -> bool:
-        """Write a value to the device over the shared connection."""
-        writer = await self._async_get_writer()
+        """Write a value to the device over the shared connection.
 
-        if writer is None:
-            self.logger.warning("Unable to write %s: no connection", field)
-            return False
+        connection_lock is held for the whole operation so the offline
+        retry loop or an unload cannot drop the shared client while a
+        write is in flight. The wait is bounded by the writer timeout.
+        """
+        async with self.connection_lock:
+            writer = await self._async_get_writer()
 
-        if self.config.use_encryption and self.reader is not None:
-            if not self.reader.encryption.is_ready_for_commands:
-                # The handshake is done by the reader on the shared connection
-                await self.reader.read()
-
-            if not self.reader.encryption.is_ready_for_commands:
-                self.logger.warning(
-                    "Encryption handshake not finished, not writing %s", field
-                )
+            if writer is None:
+                self.logger.warning("Unable to write %s: no connection", field)
                 return False
 
-        return bool(await writer.write(field, value))
+            if self.config.use_encryption and self.reader is not None:
+                if not self.reader.encryption.is_ready_for_commands:
+                    # Handshake is done by the reader on the shared connection
+                    await self.reader.read()
+
+                if not self.reader.encryption.is_ready_for_commands:
+                    self.logger.warning(
+                        "Encryption handshake not finished, not writing %s",
+                        field,
+                    )
+                    return False
+
+            return bool(await writer.write(field, value))
 
     async def async_write_verified(self, field: str, value: Any) -> Any:
-        """Write a value and return the device's verified state."""
-        writer = await self._async_get_writer()
+        """Write a value and return the device's verified state.
 
-        if writer is None:
-            self.logger.warning(
-                "Unable to write %s: no connection",
-                field,
-            )
-            return None
+        The write and its verification read-back are one lifecycle
+        operation: connection_lock is held across both so a reconnect
+        cannot interrupt between the write and the read-back.
+        """
+        async with self.connection_lock:
+            writer = await self._async_get_writer()
 
-        if self.config.use_encryption and self.reader is not None:
-            if not self.reader.encryption.is_ready_for_commands:
-                await self.reader.read()
-
-            if not self.reader.encryption.is_ready_for_commands:
+            if writer is None:
                 self.logger.warning(
-                    "Encryption handshake not finished, not writing %s",
+                    "Unable to write %s: no connection",
                     field,
                 )
                 return None
 
-        result = await writer.write_verified(field, value)
+            if self.config.use_encryption and self.reader is not None:
+                if not self.reader.encryption.is_ready_for_commands:
+                    await self.reader.read()
+
+                if not self.reader.encryption.is_ready_for_commands:
+                    self.logger.warning(
+                        "Encryption handshake not finished, not writing %s",
+                        field,
+                    )
+                    return None
+
+            result = await writer.write_verified(field, value)
 
         if result.values is not None and isinstance(self.data, dict):
             updated_data = {**self.data, **result.values}

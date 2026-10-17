@@ -297,6 +297,81 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
             "ctrl_system_on_off",
         )
 
+    async def run_write_blocks_reconnect(self, write_method_name):
+        """A reconnect must wait until an in-flight write has finished."""
+        coordinator = self.make_coordinator()
+
+        write_started = asyncio.Event()
+        release_write = asyncio.Event()
+
+        async def blocking_write(_field, _value):
+            write_started.set()
+            await release_write.wait()
+            return True
+
+        async def blocking_write_verified(_field, _value):
+            write_started.set()
+            await release_write.wait()
+            return SimpleNamespace(
+                write_succeeded=True,
+                readback_succeeded=True,
+                verified=True,
+                values=None,
+            )
+
+        writer = SimpleNamespace(
+            write=blocking_write,
+            write_verified=blocking_write_verified,
+        )
+
+        entered_critical = asyncio.Event()
+
+        async def fake_connect():
+            entered_critical.set()
+            return None
+
+        with patch.object(
+            coordinator, "_async_get_writer", new=AsyncMock(return_value=writer)
+        ):
+            write_task = asyncio.create_task(
+                getattr(coordinator, write_method_name)(
+                    "ctrl_system_on_off", True
+                )
+            )
+            await write_started.wait()
+
+            with patch.object(
+                coordinator, "_async_get_client_unlocked", new=fake_connect
+            ):
+                reconnect_task = asyncio.create_task(
+                    coordinator._async_get_client()
+                )
+
+                for _ in range(10):
+                    await asyncio.sleep(0)
+
+                # The reconnect needs connection_lock, which the write
+                # still holds, so it must not have entered setup yet.
+                self.assertFalse(entered_critical.is_set())
+                self.assertFalse(reconnect_task.done())
+
+                release_write.set()
+                write_result = await write_task
+                reconnect_result = await reconnect_task
+
+        self.assertIsNotNone(write_result)
+        self.assertTrue(entered_critical.is_set())
+        self.assertIsNone(reconnect_result)
+        self.assertFalse(coordinator.connection_lock.locked())
+
+    async def test_plain_write_blocks_concurrent_reconnect(self):
+        """async_write must hold connection_lock across the whole write."""
+        await self.run_write_blocks_reconnect("async_write")
+
+    async def test_verified_write_blocks_concurrent_reconnect(self):
+        """async_write_verified must hold the lock across write+read-back."""
+        await self.run_write_blocks_reconnect("async_write_verified")
+
 
 if __name__ == "__main__":
     unittest.main()
