@@ -13,9 +13,10 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 from bluetti_bt_lib import build_device, FieldName, get_unit
+from bluetti_bt_lib.fields import NumberField
 
 from . import device_info as dev_info, get_unique_id, FullDeviceConfig
-from .const import DATA_COORDINATOR, DOMAIN, MANUFACTURER
+from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
 from .utils import mac_loggable, unique_id_logable
 from .types import get_device_class, get_state_class, get_category
@@ -56,6 +57,10 @@ async def async_setup_entry(
         if field_name in [FieldName.PACK_CELL_VOLTAGES, FieldName.PACK_SELECTED]:
             continue
 
+        # Writable numeric registers are exposed by the number platform.
+        if isinstance(field, NumberField):
+            continue
+
         unit = get_unit(field_name)
         device_class = get_device_class(field_name)
         state_class = get_state_class(field_name)
@@ -88,6 +93,9 @@ async def async_setup_entry(
             )
 
     # Pack fields
+    # The library polls each pack and returns its values as pack_N_<field>
+    # keys. They belong on the main device: separate pack devices only add
+    # clutter, and empty slots would show up as phantom devices.
     for field in bluetti_device.pack_fields:
         field_name = FieldName(field.name)
 
@@ -100,13 +108,6 @@ async def async_setup_entry(
         category = get_category(field_name)
 
         for num in range(1, bluetti_device.max_packs + 1):
-            main_name = dev_info(entry).get("name")
-            device_info = DeviceInfo(
-                identifiers={(DOMAIN, f"{config.address}_pack_{num}")},
-                name=f"{main_name} Battery Pack {num}",
-                manufacturer=MANUFACTURER,
-            )
-
             if field_name == FieldName.PACK_CELL_VOLTAGES:
                 # Special case: list of cell voltages
                 for cell_num in range(1, field.size + 1):
@@ -184,10 +185,18 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         self._logger = logger
 
         self._attr_has_entity_name = True
-        e_name = f"{device_info.get('name')} {response_key}"
+
+        # Pack entities used to sit on their own device, whose name carried
+        # the pack label. Keeping that label in the unique id lets existing
+        # entities survive the move onto the main device.
+        base_name = device_info.get("name")
+        if pack_num is not None:
+            base_name = f"{base_name} Battery Pack {pack_num}"
+
+        e_name = f"{base_name} {response_key}"
 
         if cell_num is not None:
-            e_name = f"{device_info.get('name')} {response_key} {cell_num}"
+            e_name = f"{base_name} {response_key} {cell_num}"
 
         self._address = address
         self._response_key = (
@@ -203,6 +212,11 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         if cell_num is not None:
             self._attr_translation_key = f"pack_{response_key}"
             self._attr_translation_placeholders = {"cell_num": cell_num}
+
+            if pack_num is not None:
+                self._attr_translation_placeholders["pack_num"] = pack_num
+        elif pack_num is not None:
+            self._attr_translation_placeholders = {"pack_num": pack_num}
 
         self._attr_available = False
         self._attr_unique_id = get_unique_id(e_name)
