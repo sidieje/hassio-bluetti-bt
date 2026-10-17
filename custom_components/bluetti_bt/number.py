@@ -119,8 +119,9 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
 
         self._attr_native_min_value = field.min if field.min is not None else 0
         self._attr_native_max_value = field.max if field.max is not None else 100
-        # These registers only hold whole numbers.
-        self._attr_native_step = 1
+        # The library's step is the increment the device accepts
+        # (5 for the AC300 SOC range); registers without one take whole numbers.
+        self._attr_native_step = field.step if field.step else 1
         self._attr_mode = NumberMode.AUTO
 
     @property
@@ -198,6 +199,16 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
         ):
             self._logger.warning(
                 "Ignoring out of range value for %s: %s", self._response_key, value
+            )
+            return
+
+        step = self._field.step
+        if step and target % step != 0:
+            self._logger.warning(
+                "Ignoring off-step value for %s: %s (device accepts multiples of %s)",
+                self._response_key,
+                target,
+                step,
             )
             return
 

@@ -12,7 +12,8 @@ from custom_components.bluetti_bt.number import BluettiNumber
 
 def soc_range_field(name: FieldName) -> NumberField:
     """The SOC range register as the library defines it for the AC300."""
-    return NumberField(name, 3015 if name is FieldName.BATTERY_SOC_RANGE_START else 3016, 1, 0, 100)
+    address = 3015 if name is FieldName.BATTERY_SOC_RANGE_START else 3016
+    return NumberField(name, address, 1, 0, 100, 5)
 
 
 class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
@@ -61,6 +62,36 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
 
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once()
+
+    async def test_off_step_value_is_not_written(self):
+        """The SOC range registers only accept 5% increments."""
+        number = self.make_number()
+
+        await number.async_set_native_value(32)
+
+        number.coordinator.async_write_verified.assert_not_awaited()
+        number._logger.warning.assert_called_once_with(
+            "Ignoring off-step value for %s: %s (device accepts multiples of %s)",
+            "soc_range_start",
+            32,
+            5,
+        )
+
+    async def test_on_step_value_is_written(self):
+        number = self.make_number(
+            result=SimpleNamespace(
+                write_succeeded=True,
+                readback_succeeded=True,
+                verified=True,
+                values={"soc_range_start": 35},
+            )
+        )
+
+        await number.async_set_native_value(35.0)
+
+        number.coordinator.async_write_verified.assert_awaited_once_with(
+            "soc_range_start", 35
+        )
 
     async def test_soc_range_start_must_stay_below_end(self):
         number = self.make_number()
