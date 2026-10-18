@@ -344,10 +344,10 @@
         "name": "System An/Aus"
       },
       "ctrl_grid_charge_on": {
-        "name": "Laden aus dem Netz"
+        "name": "UPS Laden aus dem Netz"
       },
       "ctrl_time_control_on": {
-        "name": "Zeitsteuerung"
+        "name": "UPS Zeitsteuerung"
       }
     },
     "select": {
@@ -375,10 +375,10 @@
     },
     "number": {
       "soc_range_end": {
-        "name": "SOC hoch"
+        "name": "UPS SOC hoch"
       },
       "soc_range_start": {
-        "name": "SOC niedrig"
+        "name": "UPS SOC niedrig"
       }
     },
     "binary_sensor": {
@@ -404,7 +404,7 @@
         "name": "Generator Modus"
       },
       "ctrl_grid_charge_on": {
-        "name": "Laden aus dem Netz"
+        "name": "UPS Laden aus dem Netz"
       },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
@@ -422,7 +422,7 @@
         "name": "System An/Aus"
       },
       "ctrl_time_control_on": {
-        "name": "Zeitsteuerung"
+        "name": "UPS Zeitsteuerung"
       },
       "ac_output_on": {
         "name": "AC Ausgang"

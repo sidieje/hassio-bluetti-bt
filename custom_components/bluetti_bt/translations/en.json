@@ -332,7 +332,7 @@
         "name": "Eco Mode DC"
       },
       "ctrl_grid_charge_on": {
-        "name": "Charge from Grid"
+        "name": "UPS Charge from Grid"
       },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
@@ -347,7 +347,7 @@
         "name": "System On/Off"
       },
       "ctrl_time_control_on": {
-        "name": "Time of Use"
+        "name": "UPS Time of Use"
       }
     },
     "select": {
@@ -375,10 +375,10 @@
     },
     "number": {
       "soc_range_end": {
-        "name": "SOC high"
+        "name": "UPS SOC high"
       },
       "soc_range_start": {
-        "name": "SOC low"
+        "name": "UPS SOC low"
       }
     },
     "binary_sensor": {
@@ -404,7 +404,7 @@
         "name": "Generator Mode"
       },
       "ctrl_grid_charge_on": {
-        "name": "Charge from Grid"
+        "name": "UPS Charge from Grid"
       },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
@@ -422,7 +422,7 @@
         "name": "System On/Off"
       },
       "ctrl_time_control_on": {
-        "name": "Time of Use"
+        "name": "UPS Time of Use"
       },
       "ac_output_on": {
         "name": "AC Output"
