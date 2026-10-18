@@ -5,14 +5,16 @@ import logging
 from homeassistant.components.binary_sensor import BinarySensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
-from bluetti_bt_lib import build_device
+from bluetti_bt_lib import build_device, FieldName
+from bluetti_bt_lib.fields import SwitchField
 
-from .types import FullDeviceConfig
+from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
@@ -48,12 +50,21 @@ async def async_setup_entry(
         bool_fields = bool_fields + bluetti_device.get_switch_fields()
 
     for field in bool_fields:
+        # On encrypted stations every switch also gets a read-only binary
+        # sensor next to the real switch entity, so those mirrors are filed
+        # under Diagnostic instead of cluttering the main list.
+        if config.use_encryption and isinstance(field, SwitchField):
+            category = EntityCategory.DIAGNOSTIC
+        else:
+            category = get_category(FieldName(field.name))
+
         sensors_to_add.append(
             BluettiBinarySensor(
                 coordinator,
                 device_info,
                 field.address,
                 field.name,
+                category=category,
                 logger=logger,
             )
         )
@@ -70,6 +81,7 @@ class BluettiBinarySensor(CoordinatorEntity, BinarySensorEntity):
         device_info: DeviceInfo,
         address: int,
         response_key: str,
+        category: EntityCategory | None = None,
         logger: logging.Logger = logging.getLogger(),
     ):
         """Init binary entity."""
@@ -86,6 +98,7 @@ class BluettiBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._attr_device_info = device_info
         self._attr_translation_key = response_key
         self._attr_available = False
+        self._attr_entity_category = category
         self._attr_unique_id = get_unique_id(e_name)
 
     @property

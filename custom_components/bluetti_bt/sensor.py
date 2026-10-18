@@ -5,7 +5,7 @@ from enum import Enum
 import logging
 from decimal import Decimal
 from typing import List
-from homeassistant.components.sensor import SensorEntity
+from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import EntityCategory
@@ -46,12 +46,18 @@ async def async_setup_entry(
     bluetti_device = build_device(config.name)
 
     sensors_to_add = []
-    sensor_fields = bluetti_device.get_sensor_fields()
+    sensor_fields: list[tuple[object, bool]] = [
+        (field, False) for field in bluetti_device.get_sensor_fields()
+    ]
 
     if config.use_encryption:
-        sensor_fields = sensor_fields + bluetti_device.get_select_fields()
+        # Encrypted stations also report each select register as a plain
+        # reading, which shows up next to the real select entity.
+        sensor_fields += [
+            (field, True) for field in bluetti_device.get_select_fields()
+        ]
 
-    for field in sensor_fields:
+    for field, is_mirror in sensor_fields:
         field_name = FieldName(field.name)
 
         if field_name in [FieldName.PACK_CELL_VOLTAGES, FieldName.PACK_SELECTED]:
@@ -64,7 +70,11 @@ async def async_setup_entry(
         unit = get_unit(field_name)
         device_class = get_device_class(field_name)
         state_class = get_state_class(field_name)
-        category = None if config.use_encryption else get_category(field_name)
+        # Read-only mirrors of a control entity are informational, so they
+        # stay out of the main Sensors section.
+        category = (
+            EntityCategory.DIAGNOSTIC if is_mirror else get_category(field_name)
+        )
 
         if unit is not None:
             sensors_to_add.append(
@@ -221,6 +231,12 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         self._attr_available = False
         self._attr_unique_id = get_unique_id(e_name)
         self._attr_native_unit_of_measurement = unit_of_measurement
+        # The device page shows a battery badge for the first battery-class
+        # sensor of the device, chosen by name order, so "Battery Pack 1 SOC"
+        # would replace the station's total SOC there. Only the total reading
+        # keeps the battery device class.
+        if pack_num is not None and device_class == SensorDeviceClass.BATTERY:
+            device_class = None
         self._attr_device_class = device_class
         self._attr_state_class = state_class
         self._attr_entity_category = category

@@ -51,6 +51,48 @@ class TestDevicePageGrouping(unittest.TestCase):
             get_category(FieldName.DEVICE_SN), EntityCategory.DIAGNOSTIC
         )
 
+    def test_identity_fields_are_diagnostic(self):
+        """Serial number, model, WiFi name and firmware versions are support
+        detail, and the same fields on every power station."""
+        for name in (
+            FieldName.DEVICE_SN,
+            FieldName.DEVICE_TYPE,
+            FieldName.WIFI_NAME,
+            FieldName.VER_BMS,
+            FieldName.VER_ARM,
+            FieldName.VER_DSP,
+        ):
+            self.assertEqual(
+                get_category(name), EntityCategory.DIAGNOSTIC, f"{name}"
+            )
+
+    def test_split_phase_is_diagnostic(self):
+        """Split phase wiring is an install-time setting, not a control."""
+        for name in (FieldName.CTRL_SPLIT_PHASE, FieldName.CTRL_SPLIT_PHASE_MODE):
+            self.assertEqual(get_category(name), EntityCategory.DIAGNOSTIC, f"{name}")
+
+    def test_eco_and_power_lifting_toggles_are_controls(self):
+        """Toggles the user flips day to day sit under Controls."""
+        for name in (
+            FieldName.CTRL_ECO,
+            FieldName.CTRL_ECO_AC,
+            FieldName.CTRL_ECO_DC,
+            FieldName.CTRL_POWER_LIFTING,
+        ):
+            self.assertEqual(get_category(name), None, f"{name} belongs in Controls")
+
+    def test_eco_thresholds_are_diagnostic(self):
+        """The eco thresholds are read-only, so they are not settings."""
+        for name in (FieldName.CTRL_ECO_MIN_POWER_AC, FieldName.CTRL_ECO_MIN_POWER_DC):
+            self.assertEqual(get_category(name), EntityCategory.DIAGNOSTIC, f"{name}")
+
+    def test_eco_timer_selects_stay_in_configuration(self):
+        for name in (
+            FieldName.CTRL_ECO_TIME_MODE_AC,
+            FieldName.CTRL_ECO_TIME_MODE_DC,
+        ):
+            self.assertEqual(get_category(name), EntityCategory.CONFIG, f"{name}")
+
 
 if __name__ == "__main__":
     unittest.main()

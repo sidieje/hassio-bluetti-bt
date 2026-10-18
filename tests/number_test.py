@@ -63,19 +63,23 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once()
 
-    async def test_off_step_value_is_not_written(self):
-        """The SOC range registers only accept 5% increments."""
-        number = self.make_number()
+    async def test_off_step_value_is_written(self):
+        """The library step is a UI hint; the registers take whole percents."""
+        number = self.make_number(
+            result=SimpleNamespace(
+                write_succeeded=True,
+                readback_succeeded=True,
+                verified=True,
+                values={"soc_range_start": 32},
+            )
+        )
 
         await number.async_set_native_value(32)
 
-        number.coordinator.async_write_verified.assert_not_awaited()
-        number._logger.warning.assert_called_once_with(
-            "Ignoring off-step value for %s: %s (device accepts multiples of %s)",
-            "soc_range_start",
-            32,
-            5,
+        number.coordinator.async_write_verified.assert_awaited_once_with(
+            "soc_range_start", 32
         )
+        number._logger.warning.assert_not_called()
 
     async def test_on_step_value_is_written(self):
         number = self.make_number(
