@@ -179,6 +179,9 @@
       "device_sn": {
         "name": "Serial Number"
       },
+      "discharge_time_remaining": {
+        "name": "Discharge Time Remaining"
+      },
       "grid_frequency": {
         "name": "Grid Frequency"
       },
