@@ -4,6 +4,7 @@ import unittest
 
 from bluetti_bt_lib.base_devices import BluettiDevice
 from bluetti_bt_lib.devices import DEVICES
+from bluetti_bt_lib.fields import NumberField
 
 
 class TestTranslationsDe(unittest.TestCase):
@@ -27,6 +28,7 @@ class TestTranslationsDe(unittest.TestCase):
         self.binary_sensor_names = set()
         self.select_names = set()
         self.switch_names = set()
+        self.number_names = set()
 
         for device in devices:
             for field in device.get_sensor_fields() + device.get_select_fields():
@@ -37,6 +39,9 @@ class TestTranslationsDe(unittest.TestCase):
                 self.select_names.add(field.name)
             for field in device.get_switch_fields():
                 self.switch_names.add(field.name)
+            for field in device.fields:
+                if isinstance(field, NumberField):
+                    self.number_names.add(field.name)
 
     def test_sensor_translations(self):
         sensor_keys = sorted(self.t["entity"]["sensor"].keys())
@@ -76,4 +81,14 @@ class TestTranslationsDe(unittest.TestCase):
                 switch_name,
                 switch_keys,
                 f"Missing translation for switch: {switch_name}",
+            )
+
+    def test_number_translations(self):
+        number_keys = sorted(self.t["entity"]["number"].keys())
+
+        for number_name in self.number_names:
+            self.assertIn(
+                number_name,
+                number_keys,
+                f"Missing translation for number: {number_name}",
             )

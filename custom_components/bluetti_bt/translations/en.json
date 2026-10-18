@@ -303,13 +303,13 @@
         "name": "WiFi Name"
       },
       "pack_voltage": {
-        "name": "Voltage"
+        "name": "Battery Pack {pack_num} Voltage"
       },
       "pack_battery_soc": {
-        "name": "SOC"
+        "name": "Battery Pack {pack_num} SOC"
       },
       "pack_cell_voltages": {
-        "name": "Voltage Cell {cell_num}"
+        "name": "Battery Pack {pack_num} Voltage Cell {cell_num}"
       }
     },
     "switch": {
@@ -331,6 +331,9 @@
       "ctrl_eco_dc": {
         "name": "Eco Mode DC"
       },
+      "ctrl_grid_charge_on": {
+        "name": "UPS Charge from Grid"
+      },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
       },
@@ -342,6 +345,9 @@
       },
       "ctrl_system_on_off": {
         "name": "System On/Off"
+      },
+      "ctrl_time_control_on": {
+        "name": "UPS Time of Use"
       }
     },
     "select": {
@@ -367,6 +373,14 @@
         "name": "UPS Mode"
       }
     },
+    "number": {
+      "soc_range_end": {
+        "name": "UPS SOC high"
+      },
+      "soc_range_start": {
+        "name": "UPS SOC low"
+      }
+    },
     "binary_sensor": {
       "ctrl_ac": {
         "name": "AC Output"
@@ -389,6 +403,9 @@
       "ctrl_generator": {
         "name": "Generator Mode"
       },
+      "ctrl_grid_charge_on": {
+        "name": "UPS Charge from Grid"
+      },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
       },
@@ -403,6 +420,9 @@
       },
       "ctrl_system_on_off": {
         "name": "System On/Off"
+      },
+      "ctrl_time_control_on": {
+        "name": "UPS Time of Use"
       },
       "ac_output_on": {
         "name": "AC Output"

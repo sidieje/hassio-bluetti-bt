@@ -303,13 +303,13 @@
         "name": "WiFi Name"
       },
       "pack_voltage": {
-        "name": "Spannung"
+        "name": "Batteriepack {pack_num} Spannung"
       },
       "pack_battery_soc": {
-        "name": "Ladestand"
+        "name": "Batteriepack {pack_num} Ladestand"
       },
       "pack_cell_voltages": {
-        "name": "Spannung Zelle {cell_num}"
+        "name": "Batteriepack {pack_num} Spannung Zelle {cell_num}"
       }
     },
     "switch": {
@@ -342,6 +342,12 @@
       },
       "ctrl_system_on_off": {
         "name": "System An/Aus"
+      },
+      "ctrl_grid_charge_on": {
+        "name": "UPS Laden aus dem Netz"
+      },
+      "ctrl_time_control_on": {
+        "name": "UPS Zeitsteuerung"
       }
     },
     "select": {
@@ -367,6 +373,14 @@
         "name": "UPS Modus"
       }
     },
+    "number": {
+      "soc_range_end": {
+        "name": "UPS SOC hoch"
+      },
+      "soc_range_start": {
+        "name": "UPS SOC niedrig"
+      }
+    },
     "binary_sensor": {
       "ctrl_ac": {
         "name": "AC Ausgang"
@@ -389,6 +403,9 @@
       "ctrl_generator": {
         "name": "Generator Modus"
       },
+      "ctrl_grid_charge_on": {
+        "name": "UPS Laden aus dem Netz"
+      },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
       },
@@ -403,6 +420,9 @@
       },
       "ctrl_system_on_off": {
         "name": "System An/Aus"
+      },
+      "ctrl_time_control_on": {
+        "name": "UPS Zeitsteuerung"
       },
       "ac_output_on": {
         "name": "AC Ausgang"

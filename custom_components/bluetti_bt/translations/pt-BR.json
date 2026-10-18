@@ -110,14 +110,20 @@
       "ctrl_charging_mode": { "name": "Modo de carregamento" },
       "ctrl_dc": { "name": "Saída CC" },
       "ctrl_eco": { "name": "Modo ECO" },
+      "ctrl_grid_charge_on": { "name": "UPS Carregamento da rede" },
       "ctrl_led_mode": { "name": "Modo do LED" },
       "ctrl_power_lifting": { "name": "Power Lifting" },
-      "ctrl_power_off": { "name": "Desligar" }
+      "ctrl_power_off": { "name": "Desligar" },
+      "ctrl_time_control_on": { "name": "UPS Controle por horário" }
     },
     "select": {
       "ctrl_charging_mode": { "name": "Modo de carregamento" },
       "ctrl_eco_time_mode": { "name": "Temporizador ECO" },
       "ctrl_led_mode": { "name": "Modo do LED" }
+    },
+    "number": {
+      "soc_range_end": { "name": "UPS SOC máximo" },
+      "soc_range_start": { "name": "UPS SOC mínimo" }
     }
   }
 }
