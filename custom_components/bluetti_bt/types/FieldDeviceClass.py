@@ -67,7 +67,6 @@ FIELD_DEVICE_CLASS: Dict[FieldName, SensorDeviceClass] = {
     FieldName.SM_P3_POWER: SensorDeviceClass.POWER,
     FieldName.SM_P3_VOLTAGE: SensorDeviceClass.VOLTAGE,
     FieldName.TIME_REMAINING: SensorDeviceClass.DURATION,
-    FieldName.DISCHARGE_TIME_REMAINING: SensorDeviceClass.DURATION,
     # Battery packs
     FieldName.PACK_BATTERY_SOC: SensorDeviceClass.BATTERY,
     FieldName.PACK_CELL_VOLTAGES: SensorDeviceClass.VOLTAGE,

@@ -179,9 +179,6 @@
       "device_sn": {
         "name": "Seriennummer"
       },
-      "discharge_time_remaining": {
-        "name": "Verbleibende Entladezeit"
-      },
       "grid_frequency": {
         "name": "Netzfrequenz"
       },
