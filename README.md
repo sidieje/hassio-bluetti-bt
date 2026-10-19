@@ -3,17 +3,29 @@
 [![Validate with hassfest](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml/badge.svg)](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/hassfest_validation.yml)
 [![HACS Action](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/HACS.yml/badge.svg)](https://github.com/Patrick762/hassio-bluetti-bt/actions/workflows/HACS.yml)
 
-### Charger 2 and Apex 300 Read and Write Support
+### Bluetti Bluetooth integration with read and encrypted write support
 
-This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read and control support for the **BLUETTI Charger 2**, **EL100mini** and **Apex 300**.
+This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read support and write control for the encrypted devices **BLUETTI Charger 2**, **Apex 300**, **EL200 V2**, **EL100 V2**, **EL100 mini** and **EL10**.
 
-The Charger 2 uses a different register layout and control protocol from other supported BLUETTI devices. Its system power and silent charging controls share a multipurpose register rather than using independent Boolean registers, requiring additional read-modify-write handling in the Bluetooth communication layer.
+#### Device support and encrypted communication
 
-Charger 2 support has been tested with physical hardware, including reading device data and operating both controls. As these changes introduce device-specific handling beyond the original implementation, support remains experimental. This fork is maintained independently, and feedback, testing, and issue reports are welcome.
+Unencrypted devices retain their existing controls, with additional controls added for the **AC300** and **AC500**. This fork also adds working controls for supported newer Elite devices that require encrypted Bluetooth communication.
 
-EL100mini and Apex 300 support adds controls for AC and DC outputs, AC Eco Mode, DC Eco Mode, Power Lifting, UPS charging mode, and Eco timers, along with many additional sensor readings.
+These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which adds persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
 
-A Bluetooth integration for BLUETTI power stations in Home Assistant.
+The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+
+The **Charger 2** uses a different control protocol, with system power and silent charging sharing a multipurpose register that requires read-modify-write handling.
+
+Support for the encrypted models is experimental and has been tested against physical hardware. This fork is maintained independently, and feedback, testing, and issue reports are welcome.
+
+#### Write controls by device
+
+| Device | Controls |
+| --- | --- |
+| **Charger 2** | System on/off, silent charging |
+| **Apex 300**, **EL100 V2**, **EL200 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
 
 ## Disclaimer
 This integration is provided without any warranty or support by Bluetti. I do not take responsibility for any problems it may cause in all cases. Use it at your own risk.
