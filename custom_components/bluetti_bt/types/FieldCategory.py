@@ -13,6 +13,9 @@ DIAGNOSTICS = [
     FieldName.VER_DSP,
     FieldName.VER_BMS,
     FieldName.PACK_CELL_VOLTAGES,
+    # How many packs the station reports as installed, which says something
+    # about the hardware fitment rather than what the user controls.
+    FieldName.PACK_NUM,
     # Split phase wiring is a one-off install setting, not an everyday control.
     FieldName.CTRL_SPLIT_PHASE,
     FieldName.CTRL_SPLIT_PHASE_MODE,

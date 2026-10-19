@@ -86,6 +86,11 @@ class TestDevicePageGrouping(unittest.TestCase):
         for name in (FieldName.CTRL_ECO_MIN_POWER_AC, FieldName.CTRL_ECO_MIN_POWER_DC):
             self.assertEqual(get_category(name), EntityCategory.DIAGNOSTIC, f"{name}")
 
+    def test_pack_count_is_diagnostic(self):
+        """The pack count register describes the installed hardware, so it is
+        support detail rather than something the user tunes."""
+        self.assertEqual(get_category(FieldName.PACK_NUM), EntityCategory.DIAGNOSTIC)
+
     def test_eco_timer_selects_stay_in_configuration(self):
         for name in (
             FieldName.CTRL_ECO_TIME_MODE_AC,

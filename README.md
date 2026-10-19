@@ -5,11 +5,13 @@
 
 ### Bluetti Bluetooth integration with read and encrypted write support
 
-This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read support and write control for the encrypted devices **BLUETTI Charger 2**, **Apex 300**, **EL200 V2**, **EL100 V2**, **EL100 mini** and **EL10**.
+This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read support and write control for the encrypted devices **BLUETTI Charger 2**, **Apex 300**, **EL10**, **EL30 V2**, **EL100 V2**, **EL100 mini**, **EL200 V2** and **EL300**.
 
 #### Device support and encrypted communication
 
 Unencrypted devices retain their existing controls, with additional controls added for the **AC300** and **AC500**. This fork also adds working controls for supported newer Elite devices that require encrypted Bluetooth communication.
+
+The **AC200M**, **AC300** and **AC500** towers report per-pack SOC and pack voltage, and only poll the packs the station reports as installed.
 
 These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which adds persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
 
@@ -24,7 +26,7 @@ Support for the encrypted models is experimental and has been tested against phy
 | Device | Controls |
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
-| **Apex 300**, **EL100 V2**, **EL200 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **Apex 300**, **EL30 V2**, **EL100 V2**, **EL100 mini**, **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
 
 ## Disclaimer

@@ -67,6 +67,7 @@
 
       "device_type": { "name": "Tipo de dispositivo" },
       "device_sn": { "name": "Número de série" },
+      "pack_num": { "name": "Quantidade de packs de bateria" },
 
       "grid_frequency": { "name": "Frequência da rede" },
       "grid_p1_current": { "name": "Corrente da rede Fase 1" },

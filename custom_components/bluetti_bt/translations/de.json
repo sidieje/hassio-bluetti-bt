@@ -310,6 +310,9 @@
       },
       "pack_cell_voltages": {
         "name": "Batteriepack {pack_num} Spannung Zelle {cell_num}"
+      },
+      "pack_num": {
+        "name": "Anzahl Batteriepacks"
       }
     },
     "switch": {
