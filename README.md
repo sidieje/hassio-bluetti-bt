@@ -11,7 +11,7 @@ This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/h
 
 Unencrypted devices retain their existing controls, with additional controls added for the **AC300** and **AC500**. This fork also adds working controls for supported newer Elite devices that require encrypted Bluetooth communication.
 
-The **AC200M**, **AC300** and **AC500** towers report per-pack SOC and pack voltage, and only poll the packs the station reports as installed.
+The **AC200M**, **AC300** and **AC500** towers report per-pack SOC and pack voltage, and empty pack slots are detected and skipped.
 
 These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which adds persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
 
