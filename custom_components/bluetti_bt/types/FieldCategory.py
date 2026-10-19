@@ -12,7 +12,6 @@ DIAGNOSTICS = [
     FieldName.VER_ARM,
     FieldName.VER_DSP,
     FieldName.VER_BMS,
-    FieldName.PACK_CELL_VOLTAGES,
     # How many packs the station reports as installed, which says something
     # about the hardware fitment rather than what the user controls.
     FieldName.PACK_NUM,

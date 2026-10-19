@@ -4,7 +4,6 @@ from __future__ import annotations
 from enum import Enum
 import logging
 from decimal import Decimal
-from typing import List
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
@@ -18,6 +17,7 @@ from bluetti_bt_lib.fields import NumberField
 from . import device_info as dev_info, get_unique_id, FullDeviceConfig
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
+from .pack_slots import apply_pack_visibility, occupied_slots, watch_pack_slots
 from .utils import mac_loggable, unique_id_logable
 from .types import get_device_class, get_state_class, get_category
 
@@ -60,7 +60,7 @@ async def async_setup_entry(
     for field, is_mirror in sensor_fields:
         field_name = FieldName(field.name)
 
-        if field_name in [FieldName.PACK_CELL_VOLTAGES, FieldName.PACK_SELECTED]:
+        if field_name == FieldName.PACK_SELECTED:
             continue
 
         # Writable numeric registers are exposed by the number platform.
@@ -106,6 +106,9 @@ async def async_setup_entry(
     # The library polls each pack and returns its values as pack_N_<field>
     # keys. They belong on the main device: separate pack devices only add
     # clutter, and empty slots would show up as phantom devices.
+    pack_slots = occupied_slots(coordinator.data)
+    pack_entities: dict[int, list[BluettiSensor]] = {}
+
     for field in bluetti_device.pack_fields:
         field_name = FieldName(field.name)
 
@@ -118,55 +121,32 @@ async def async_setup_entry(
         category = get_category(field_name)
 
         for num in range(1, bluetti_device.max_packs + 1):
-            if field_name == FieldName.PACK_CELL_VOLTAGES:
-                # Special case: list of cell voltages
-                for cell_num in range(1, field.size + 1):
-                    sensors_to_add.append(
-                        BluettiSensor(
-                            coordinator,
-                            device_info,
-                            field.address,
-                            field.name,
-                            unit_of_measurement=unit,
-                            device_class=device_class,
-                            state_class=state_class,
-                            category=category,
-                            pack_num=num,
-                            cell_num=cell_num,
-                            logger=logger,
-                        )
-                    )
-                continue
+            sensor = BluettiSensor(
+                coordinator,
+                device_info,
+                field.address,
+                field.name,
+                unit_of_measurement=unit,
+                device_class=device_class,
+                state_class=state_class,
+                category=category,
+                pack_num=num,
+                # A slot the station reports as empty gets its entities
+                # registered disabled rather than shown as unavailable.
+                registry_enabled=pack_slots is None or num in pack_slots,
+                logger=logger,
+            )
 
-            if unit is not None:
-                sensors_to_add.append(
-                    BluettiSensor(
-                        coordinator,
-                        device_info,
-                        field.address,
-                        field.name,
-                        unit_of_measurement=unit,
-                        device_class=device_class,
-                        state_class=state_class,
-                        category=category,
-                        pack_num=num,
-                        logger=logger,
-                    )
-                )
-            else:
-                sensors_to_add.append(
-                    BluettiSensor(
-                        coordinator,
-                        device_info,
-                        field.address,
-                        field.name,
-                        category=category,
-                        pack_num=num,
-                        logger=logger,
-                    )
-                )
+            sensors_to_add.append(sensor)
+            pack_entities.setdefault(num, []).append(sensor)
+
+    # Entries already in the registry keep the visibility they have, so the
+    # slots that changed since the last setup are moved here.
+    apply_pack_visibility(hass, pack_entities, pack_slots, logger)
 
     async_add_entities(sensors_to_add)
+
+    watch_pack_slots(hass, entry, coordinator, logger)
 
 
 class BluettiSensor(CoordinatorEntity, SensorEntity):
@@ -184,14 +164,13 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         category: EntityCategory | None = None,
         options: list[str] | None = None,
         pack_num: int | None = None,
-        cell_num: int | None = None,
+        registry_enabled: bool = True,
         logger: logging.Logger = logging.getLogger(),
     ):
         """Init sensor entity."""
         super().__init__(coordinator)
         self.coordinator = coordinator
         self._pack_num = pack_num
-        self._cell_num = cell_num
         self._logger = logger
 
         self._attr_has_entity_name = True
@@ -205,9 +184,6 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
 
         e_name = f"{base_name} {response_key}"
 
-        if cell_num is not None:
-            e_name = f"{base_name} {response_key} {cell_num}"
-
         self._address = address
         self._response_key = (
             f"pack_{pack_num}_{response_key}" if pack_num else response_key
@@ -219,16 +195,13 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
             f"pack_{response_key}" if pack_num else response_key
         )
 
-        if cell_num is not None:
-            self._attr_translation_key = f"pack_{response_key}"
-            self._attr_translation_placeholders = {"cell_num": cell_num}
-
-            if pack_num is not None:
-                self._attr_translation_placeholders["pack_num"] = pack_num
-        elif pack_num is not None:
+        if pack_num is not None:
             self._attr_translation_placeholders = {"pack_num": pack_num}
 
         self._attr_available = False
+        # Empty pack slots are registered disabled so they stay off the
+        # device page instead of showing up as unavailable readings.
+        self._attr_entity_registry_enabled_default = registry_enabled
         self._attr_unique_id = get_unique_id(e_name)
         self._attr_native_unit_of_measurement = unit_of_measurement
         # The device page shows a battery badge for the first battery-class
@@ -305,7 +278,6 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
             and not isinstance(response_data, Decimal)
             and not isinstance(response_data, Enum)
             and not isinstance(response_data, str)
-            and not isinstance(response_data, List)
         ):
             self._logger.warning(
                 "Invalid response data type from coordinator (sensor.%s): %s has type %s",
@@ -316,18 +288,12 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
             self._set_unavailable("Invalid data type")
             return
 
-        if isinstance(response_data, List) and len(response_data) < self._cell_num:
-            self._set_unavailable("Invalid list length")
-            return
-
         self._set_available()
 
         # Different for enum and numeric
         if isinstance(response_data, Enum):
             # Enum
             self._attr_native_value = response_data.name
-        elif isinstance(response_data, List):
-            self._attr_native_value = response_data[self._cell_num - 1]
         else:
             # Numeric
             self._attr_native_value = response_data

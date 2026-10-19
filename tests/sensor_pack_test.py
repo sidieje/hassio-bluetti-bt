@@ -14,7 +14,9 @@ from custom_components.bluetti_bt.sensor import BluettiSensor
 class TestPackSensors(unittest.TestCase):
     """Per-pack readings live on the main device, not on pack devices."""
 
-    def make_sensor(self, pack_num: int, cell_num: int | None = None, device_class=None):
+    def make_sensor(
+        self, pack_num: int, device_class=None, registry_enabled: bool = True
+    ):
         coordinator = Mock()
         main = DeviceInfo(
             identifiers={(DOMAIN, "AA:BB:CC:DD:EE:FF")},
@@ -28,7 +30,7 @@ class TestPackSensors(unittest.TestCase):
             "battery_soc",
             device_class=device_class,
             pack_num=pack_num,
-            cell_num=cell_num,
+            registry_enabled=registry_enabled,
         )
 
     def test_sensor_is_on_main_device(self):
@@ -62,6 +64,18 @@ class TestPackSensors(unittest.TestCase):
         sensor = self.make_sensor(1, device_class=SensorDeviceClass.BATTERY)
 
         self.assertIsNone(sensor.device_class)
+
+    def test_empty_slot_entities_are_registered_disabled(self):
+        """Otherwise every empty slot leaves an unavailable reading on the
+        device page."""
+        sensor = self.make_sensor(1, registry_enabled=False)
+
+        self.assertFalse(sensor.entity_registry_enabled_default)
+
+    def test_occupied_slot_entities_are_registered_enabled(self):
+        sensor = self.make_sensor(4)
+
+        self.assertTrue(sensor.entity_registry_enabled_default)
 
     def test_total_soc_keeps_the_battery_device_class(self):
         coordinator = Mock()
