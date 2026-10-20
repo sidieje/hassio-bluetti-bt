@@ -7,6 +7,7 @@ from homeassistant.components.switch import SwitchEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import EntityCategory
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
@@ -210,30 +211,40 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
                 self._response_key,
                 err,
             )
-            return
+            raise ServiceValidationError(
+                f"Bluetti could not reach the device to change {self._response_key}"
+            ) from err
 
         if result is None or not result.write_succeeded:
             self._logger.error(
                 "Write failed for %s; device state was not confirmed",
                 self._response_key,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device did not accept the change to {self._response_key}"
+            )
 
         if not result.readback_succeeded:
             self._logger.warning(
                 "Write sent for %s, but read-back failed; not retrying",
                 self._response_key,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device did not confirm {self._response_key}; "
+                "the state will update on the next poll"
+            )
 
         if not result.verified:
+            reported = (result.values or {}).get(self._response_key)
             self._logger.warning(
                 "Write state mismatch for %s: requested %s; device reports %s",
                 self._response_key,
                 state,
-                (result.values or {}).get(self._response_key),
+                reported,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device reports {self._response_key}={reported}, not {state}"
+            )
 
         self._logger.debug(
             "Write verified for %s: %s",

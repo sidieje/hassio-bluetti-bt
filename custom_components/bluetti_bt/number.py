@@ -11,6 +11,7 @@ from homeassistant.components.number import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE, EntityCategory
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.exceptions import ServiceValidationError
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
@@ -200,10 +201,14 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
             self._logger.warning(
                 "Ignoring out of range value for %s: %s", self._response_key, value
             )
-            return
+            raise ServiceValidationError(
+                f"{self._response_key} only accepts values from "
+                f"{self._field.min} to {self._field.max}"
+            )
 
-        if not self._ordering_ok(target):
-            return
+        refusal = self._ordering_refusal(target)
+        if refusal is not None:
+            raise ServiceValidationError(refusal)
 
         self._logger.debug(
             "Set %s on %s to %s",
@@ -213,12 +218,12 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
         )
         await self.write_to_device(target)
 
-    def _ordering_ok(self, target: int) -> bool:
-        """Check the value keeps its register ordered against its partner."""
+    def _ordering_refusal(self, target: int) -> str | None:
+        """Return why the value breaks its register pair ordering, if it does."""
         pair = ORDERED_PAIRS.get(FieldName(self._field.name))
 
         if pair is None:
-            return True
+            return None
 
         counterpart, direction = pair
         data = self.coordinator.data if isinstance(self.coordinator.data, dict) else {}
@@ -226,7 +231,7 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
 
         if not isinstance(other, int) or isinstance(other, bool):
             # Nothing to compare against yet, let the device decide.
-            return True
+            return None
 
         if (direction == "below" and target >= other) or (
             direction == "above" and target <= other
@@ -239,9 +244,12 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
                 counterpart.value,
                 other,
             )
-            return False
+            return (
+                f"{self._response_key} must stay {direction} {counterpart.value} "
+                f"({other})"
+            )
 
-        return True
+        return None
 
     async def write_to_device(self, value: int):
         """Write to the device and verify the reported value."""
@@ -263,30 +271,40 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
                 self._response_key,
                 err,
             )
-            return
+            raise ServiceValidationError(
+                f"Bluetti could not reach the device to change {self._response_key}"
+            ) from err
 
         if result is None or not result.write_succeeded:
             self._logger.error(
                 "Write failed for %s; device state was not confirmed",
                 self._response_key,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device did not accept the change to {self._response_key}"
+            )
 
         if not result.readback_succeeded:
             self._logger.warning(
                 "Write sent for %s, but read-back failed; not retrying",
                 self._response_key,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device did not confirm {self._response_key}; "
+                "the value will update on the next poll"
+            )
 
         if not result.verified:
+            reported = (result.values or {}).get(self._response_key)
             self._logger.warning(
                 "Write value mismatch for %s: requested %s; device reports %s",
                 self._response_key,
                 value,
-                (result.values or {}).get(self._response_key),
+                reported,
             )
-            return
+            raise ServiceValidationError(
+                f"The Bluetti device reports {self._response_key}={reported}, not {value}"
+            )
 
         self._logger.debug(
             "Write verified for %s: %s",

@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, Mock
 
 from bluetti_bt_lib import FieldName
 from bluetti_bt_lib.fields import NumberField
+from homeassistant.exceptions import ServiceValidationError
 
 from custom_components.bluetti_bt.number import BluettiNumber
 
@@ -58,10 +59,12 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
     async def test_out_of_range_value_is_not_written(self):
         number = self.make_number()
 
-        await number.async_set_native_value(101)
+        with self.assertRaises(ServiceValidationError) as raised:
+            await number.async_set_native_value(101)
 
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once()
+        self.assertIn("from 0 to 100", str(raised.exception))
 
     async def test_off_step_value_is_written(self):
         """The library step is a UI hint; the registers take whole percents."""
@@ -100,7 +103,8 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
     async def test_soc_range_start_must_stay_below_end(self):
         number = self.make_number()
 
-        await number.async_set_native_value(80)
+        with self.assertRaises(ServiceValidationError) as raised:
+            await number.async_set_native_value(80)
 
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once_with(
@@ -111,17 +115,31 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
             "soc_range_end",
             80,
         )
+        self.assertEqual(
+            str(raised.exception),
+            "soc_range_start must stay below soc_range_end (80)",
+        )
 
     async def test_soc_range_end_must_stay_above_start(self):
         number = self.make_number(name=FieldName.BATTERY_SOC_RANGE_END)
 
-        await number.async_set_native_value(30)
+        with self.assertRaises(ServiceValidationError):
+            await number.async_set_native_value(30)
 
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once()
 
     async def test_ordering_skipped_when_counterpart_unknown(self):
-        number = self.make_number(name=FieldName.BATTERY_SOC_RANGE_END, data={})
+        number = self.make_number(
+            name=FieldName.BATTERY_SOC_RANGE_END,
+            data={},
+            result=SimpleNamespace(
+                write_succeeded=True,
+                readback_succeeded=True,
+                verified=True,
+                values={"soc_range_end": 90},
+            ),
+        )
 
         await number.async_set_native_value(90)
 
@@ -129,7 +147,7 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
             "soc_range_end", 90
         )
 
-    async def test_value_mismatch_warns(self):
+    async def test_value_mismatch_raises(self):
         number = self.make_number(
             result=SimpleNamespace(
                 write_succeeded=True,
@@ -139,13 +157,51 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
             )
         )
 
-        await number.write_to_device(40)
+        with self.assertRaises(ServiceValidationError) as raised:
+            await number.write_to_device(40)
 
         number._logger.warning.assert_called_once_with(
             "Write value mismatch for %s: requested %s; device reports %s",
             "soc_range_start",
             40,
             30,
+        )
+        self.assertIn("soc_range_start=30, not 40", str(raised.exception))
+
+    async def test_rejected_write_raises(self):
+        number = self.make_number(
+            result=SimpleNamespace(
+                write_succeeded=False,
+                readback_succeeded=False,
+                verified=False,
+                values=None,
+            )
+        )
+
+        with self.assertRaises(ServiceValidationError):
+            await number.write_to_device(40)
+
+        number._logger.error.assert_called_once_with(
+            "Write failed for %s; device state was not confirmed",
+            "soc_range_start",
+        )
+
+    async def test_readback_failure_raises(self):
+        number = self.make_number(
+            result=SimpleNamespace(
+                write_succeeded=True,
+                readback_succeeded=False,
+                verified=False,
+                values=None,
+            )
+        )
+
+        with self.assertRaises(ServiceValidationError):
+            await number.write_to_device(40)
+
+        number._logger.warning.assert_called_once_with(
+            "Write sent for %s, but read-back failed; not retrying",
+            "soc_range_start",
         )
 
 
