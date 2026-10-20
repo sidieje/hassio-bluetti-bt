@@ -51,7 +51,10 @@ def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
     if match is None:
         return None
 
-    dev_type = match[1]
+    # The Charger 2 advertises "CHARGER 2…" with a space, but the device table
+    # is keyed "CHARGER2". Handsfree devices keep the space in both, so only
+    # close up the gap when the advertised spelling is unknown.
+    dev_type = match[1] if match[1] in DEVICES else match[1].replace(" ", "")
 
     if dev_type not in ENCRYPTED_DEVICE_TYPES:
         return None

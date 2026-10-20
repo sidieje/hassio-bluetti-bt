@@ -5,6 +5,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from bluetti_bt_lib.utils.device_builder import build_device
 from custom_components.bluetti_bt.config_flow import (
     ENCRYPTED_DEVICE_TYPES,
     BluettiConfigFlow,
@@ -38,6 +39,18 @@ class TestIdentifyFromBtName(unittest.TestCase):
                 self.assertEqual(identified[1], advertised)
                 self.assertTrue(identified[2])
 
+    def test_charger_2_advertises_a_space(self):
+        """The Charger 2 name is closed up to match the device table key."""
+        identified = identify_from_bt_name("CHARGER 22551114213971")
+
+        self.assertIsNotNone(identified)
+        self.assertEqual(identified[0], "CHARGER2")
+        self.assertEqual(identified[1], "CHARGER22551114213971")
+        self.assertTrue(identified[2])
+
+        # The entry name is built from this, so it has to be buildable
+        self.assertEqual(type(build_device(identified[1])).__name__, "CHARGER2")
+
     def test_every_encrypted_type_is_buildable(self):
         """The shortcut only lists types the library can actually build."""
         for dev_type in ENCRYPTED_DEVICE_TYPES:
@@ -55,6 +68,7 @@ class TestIdentifyFromBtName(unittest.TestCase):
             "EL10",  # no serial number to take with it
             "el102543110143137",
             "EL10V312345678",
+            "Handsfree 112345678",  # keeps its space in the device table
             "",
             None,
         ]:
@@ -112,6 +126,26 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             flow.context["title_placeholders"], {"name": "EL102543110143137"}
         )
+
+    async def test_charger_2_name_skips_the_probe(self):
+        """The Charger 2 answers on registers the generic probes miss."""
+        flow = self.make_flow()
+        discovery = self.make_discovery("CHARGER 22551114213971")
+
+        with patch(
+            "custom_components.bluetti_bt.config_flow.recognize_device"
+        ) as recognize:
+            result = await flow.async_step_bluetooth(discovery)
+
+        recognize.assert_not_called()
+        self.assertEqual(result, "created")
+
+        manufacturer_data = ManufacturerData.from_dict(
+            flow._discovery_info.manufacturer_data
+        )
+        self.assertEqual(manufacturer_data.dev_type, "CHARGER2")
+        self.assertTrue(manufacturer_data.use_encryption)
+        self.assertEqual(flow._discovery_info.name, "CHARGER22551114213971")
 
     async def test_unrecognised_name_still_probes(self):
         flow = self.make_flow()
