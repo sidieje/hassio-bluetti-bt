@@ -14,7 +14,13 @@ from homeassistant.data_entry_flow import FlowResult
 from bluetti_bt_lib import recognize_device
 from bluetti_bt_lib.devices import DEVICES, DEVICE_NAME_RE
 
-from .types import InitialDeviceConfig, ManufacturerData, OptionalDeviceConfig
+from .types import (
+    CONF_ENCRYPTION_ASSUMED,
+    CONF_USE_ENCRYPTION,
+    InitialDeviceConfig,
+    ManufacturerData,
+    OptionalDeviceConfig,
+)
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -75,6 +81,7 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         _LOGGER.info("Initialize config flow")
         self._discovery_info: BluetoothServiceInfoBleak | None = None
         self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
+        self._encryption_assumed = False
 
     async def async_step_bluetooth(
         self, discovery_info: BluetoothServiceInfoBleak
@@ -92,6 +99,7 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         # Get device type
         identified = identify_from_bt_name(discovery_info.name)
+        self._encryption_assumed = identified is not None
 
         if identified is not None:
             dev_type, full_name, use_encryption = identified
@@ -148,6 +156,7 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 name,
                 manufacturer_data.dev_type,
                 manufacturer_data.use_encryption,
+                self._encryption_assumed,
             )
 
             optional = OptionalDeviceConfig.from_dict({})
@@ -190,6 +199,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
+        # Only entries whose channel was assumed from a table can correct it.
+        # A probed entry already asked the device which one it answers on.
+        assumed = bool(self.config_entry.data.get(CONF_ENCRYPTION_ASSUMED, False))
+
         if user_input is not None:
             config = OptionalDeviceConfig.from_dict(user_input)
 
@@ -198,13 +211,27 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if reason is not None:
                 return self.async_abort(reason=reason)
 
+            data = {
+                **self.config_entry.data,
+                **config.as_dict,
+            }
+
+            if assumed:
+                data[CONF_USE_ENCRYPTION] = bool(
+                    user_input.get(CONF_USE_ENCRYPTION, False)
+                )
+
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
-                data={
-                    **self.config_entry.data,
-                    **config.as_dict,
-                },
+                data=data,
             )
+
+            if assumed:
+                # No update listener, so restart the entry to pick it up
+                self.hass.config_entries.async_schedule_reload(
+                    self.config_entry.entry_id
+                )
+
             return self.async_create_entry(
                 title="",
                 data=config.as_dict,
@@ -212,7 +239,21 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         defaults = OptionalDeviceConfig.from_dict(self.config_entry.data)
 
+        if assumed:
+            schema = defaults.schema_with(
+                {
+                    vol.Required(
+                        CONF_USE_ENCRYPTION,
+                        default=bool(
+                            self.config_entry.data.get(CONF_USE_ENCRYPTION, False)
+                        ),
+                    ): bool
+                }
+            )
+        else:
+            schema = defaults.schema
+
         return self.async_show_form(
             step_id="init",
-            data_schema=defaults.schema,
+            data_schema=schema,
         )

@@ -64,3 +64,7 @@ class OptionalDeviceConfig:
                 ): int,
             }
         )
+
+    def schema_with(self, extra: Dict[Any, Any]) -> vol.Schema:
+        """The options form with extra fields appended."""
+        return vol.Schema({**self.schema.schema, **extra})

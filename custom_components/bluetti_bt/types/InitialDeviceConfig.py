@@ -4,6 +4,7 @@ CONF_ADDRESS = "address"
 CONF_NAME = "name"
 CONF_TYPE = "type"
 CONF_USE_ENCRYPTION = "use_encryption"
+CONF_ENCRYPTION_ASSUMED = "encryption_assumed"
 
 
 class InitialDeviceConfig:
@@ -13,11 +14,15 @@ class InitialDeviceConfig:
         name: str,
         dev_type: str,
         use_encryption: bool,
+        encryption_assumed: bool = False,
     ):
         self.address = address
         self.name = name
         self.dev_type = dev_type
         self.use_encryption = use_encryption
+        # Set when the channel came from a table rather than from probing the
+        # device, so the options flow can offer to correct it
+        self.encryption_assumed = encryption_assumed
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]):
@@ -29,6 +34,7 @@ class InitialDeviceConfig:
             raw.get(CONF_NAME),
             raw.get(CONF_TYPE),
             raw.get(CONF_USE_ENCRYPTION, False),
+            raw.get(CONF_ENCRYPTION_ASSUMED, False),
         )
 
     @property
@@ -38,6 +44,7 @@ class InitialDeviceConfig:
             CONF_NAME: self.name,
             CONF_TYPE: self.dev_type,
             CONF_USE_ENCRYPTION: self.use_encryption,
+            CONF_ENCRYPTION_ASSUMED: self.encryption_assumed,
         }
 
     @staticmethod
@@ -47,4 +54,5 @@ class InitialDeviceConfig:
             and isinstance(raw.get(CONF_NAME), str)
             and isinstance(raw.get(CONF_TYPE), str)
             and isinstance(raw.get(CONF_USE_ENCRYPTION, False), bool)
+            and isinstance(raw.get(CONF_ENCRYPTION_ASSUMED, False), bool)
         )

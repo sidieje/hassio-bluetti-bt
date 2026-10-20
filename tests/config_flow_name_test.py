@@ -129,6 +129,7 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manufacturer_data.dev_type, "EL10")
         self.assertTrue(manufacturer_data.use_encryption)
         self.assertEqual(flow._discovery_info.name, "EL102543110143137")
+        self.assertTrue(flow._encryption_assumed)
         self.assertEqual(
             flow.context["title_placeholders"], {"name": "EL102543110143137"}
         )
@@ -197,6 +198,7 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manufacturer_data.dev_type, "AC300")
         self.assertFalse(manufacturer_data.use_encryption)
         self.assertEqual(flow._discovery_info.name, "AC30012345678")
+        self.assertFalse(flow._encryption_assumed)
 
     async def test_unsupported_device_aborts(self):
         flow = self.make_flow()
