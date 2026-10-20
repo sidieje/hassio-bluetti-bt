@@ -111,6 +111,27 @@ class TestDevicePageGrouping(unittest.TestCase):
         ):
             self.assertEqual(get_category(name), EntityCategory.CONFIG, f"{name}")
 
+    def test_eco_threshold_placement_follows_the_model(self):
+        """The platforms ask whether the model can write the field, so the same
+        register is a setting on one station and support detail on another."""
+        for model, expected in (
+            ("EL100V2", EntityCategory.CONFIG),
+            ("EL10", EntityCategory.CONFIG),
+            ("EL300", EntityCategory.DIAGNOSTIC),
+        ):
+            device = build_device(f"{model}12345678")
+            with self.subTest(model=model):
+                for field in device.fields:
+                    if "eco_min_power" not in field.name:
+                        continue
+                    self.assertEqual(
+                        get_category(
+                            FieldName(field.name), writable=field.is_writeable()
+                        ),
+                        expected,
+                        f"{model} {field.name}",
+                    )
+
 
 if __name__ == "__main__":
     unittest.main()
