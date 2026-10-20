@@ -9,17 +9,15 @@ This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/h
 
 #### Device support and encrypted communication
 
-Unencrypted devices retain their existing controls, with additional controls added for the **AC300** and **AC500**. This fork also adds working controls for supported newer Elite devices that require encrypted Bluetooth communication.
-
-The **AC200M**, **AC300** and **AC500** towers report per-pack SOC and pack voltage. Slots the tower reports as empty have their sensors registered disabled, so empty towers do not clutter the device page, and the integration reloads itself once a pack is added or moved.
-
-These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which adds persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
-
-The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+This fork adds working controls for Elite Series devices that require encrypted Bluetooth communication. These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which maintains persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
 
 The **Charger 2** uses a different control protocol, with system power and silent charging sharing a multipurpose register that requires read-modify-write handling.
 
-Support for the encrypted models is experimental and has been tested against physical hardware. This fork is maintained independently, and feedback, testing, and issue reports are welcome.
+Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. Battery packs report per-pack SOC and voltage. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
+
+The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+
+Support for encrypted models is experimental, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
 
 #### Write controls by device
 
