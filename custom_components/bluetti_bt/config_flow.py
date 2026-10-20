@@ -12,11 +12,55 @@ from homeassistant.components.bluetooth import (
 from homeassistant.const import CONF_ADDRESS
 from homeassistant.data_entry_flow import FlowResult
 from bluetti_bt_lib import recognize_device
+from bluetti_bt_lib.devices import DEVICES, DEVICE_NAME_RE
 
 from .types import InitialDeviceConfig, ManufacturerData, OptionalDeviceConfig
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
+
+# Models confirmed to need encrypted bluetooth communication. Their advertised
+# name carries both the type and the serial number, so they can be added
+# without opening a connection to probe them. Every other model keeps the
+# connection based recognition, which checks both the encrypted and the
+# unencrypted channel before it decides.
+ENCRYPTED_DEVICE_TYPES = {
+    "AP300",
+    "CHARGER2",
+    "EL10",
+    "EL100mini",
+    "EL100V2",
+    "EL200V2",
+    "EL300",
+    "EL30V2",
+}
+
+
+def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
+    """Identify a known encrypted device from the name it advertises.
+
+    Returns the device type, the type with its serial number appended, and
+    whether to use encryption. Returns None for anything that is not one of
+    these devices, so the caller falls back to probing it.
+    """
+    if not isinstance(name, str):
+        return None
+
+    match = DEVICE_NAME_RE.match(name)
+
+    if match is None:
+        return None
+
+    dev_type = match[1]
+
+    if dev_type not in ENCRYPTED_DEVICE_TYPES:
+        return None
+
+    # The entry is built by name later on, so the type has to be buildable
+    if DEVICES.get(dev_type) is None:
+        return None
+
+    return dev_type, dev_type + match[2], True
 
 
 class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -31,28 +75,48 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self, discovery_info: BluetoothServiceInfoBleak
     ) -> FlowResult:
         """Handle bluetooth discovery."""
-        await self.async_set_unique_id(discovery_info.address)
+        address = discovery_info.address
+
+        await self.async_set_unique_id(address)
+
+        # The abort is silent in the UI, so say why nothing happened
+        if any(entry.unique_id == address for entry in self._async_current_entries()):
+            _LOGGER.info("Device %s is already configured", address)
+
         self._abort_if_unique_id_configured()
 
         # Get device type
-        recognized = await recognize_device(
-            discovery_info.address, self.hass.loop.create_future
-        )
+        identified = identify_from_bt_name(discovery_info.name)
 
-        if recognized is None:
-            return self.async_abort(reason="Device type not supported")
+        if identified is not None:
+            dev_type, full_name, use_encryption = identified
 
-        _LOGGER.info(
-            "Device identified as %s with iot module version %s (using encryption: %s)",
-            recognized.name,
-            recognized.iot_version,
-            recognized.encrypted,
-        )
+            _LOGGER.info(
+                "Device identified from bluetooth name as %s (using encryption: %s)",
+                dev_type,
+                use_encryption,
+            )
+        else:
+            recognized = await recognize_device(address, self.hass.loop.create_future)
+
+            if recognized is None:
+                return self.async_abort(reason="Device type not supported")
+
+            dev_type = recognized.name
+            full_name = recognized.full_name
+            use_encryption = recognized.encrypted
+
+            _LOGGER.info(
+                "Device identified as %s with iot module version %s (using encryption: %s)",
+                dev_type,
+                recognized.iot_version,
+                use_encryption,
+            )
 
         discovery_info.manufacturer_data = ManufacturerData(
-            recognized.name, recognized.encrypted
+            dev_type, use_encryption
         ).as_dict
-        discovery_info.name = recognized.full_name
+        discovery_info.name = full_name
         self._discovery_info = discovery_info
         self.context["title_placeholders"] = {"name": discovery_info.name}
         return await self.async_step_user()
