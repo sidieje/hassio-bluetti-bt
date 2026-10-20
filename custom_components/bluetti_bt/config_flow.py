@@ -19,29 +19,31 @@ from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
 
-# Models confirmed to need encrypted bluetooth communication. Their advertised
-# name carries both the type and the serial number, so they can be added
-# without opening a connection to probe them. Every other model keeps the
-# connection based recognition, which checks both the encrypted and the
-# unencrypted channel before it decides.
-ENCRYPTED_DEVICE_TYPES = {
-    "AP300",
-    "CHARGER2",
-    "EL10",
-    "EL100mini",
-    "EL100V2",
-    "EL200V2",
-    "EL300",
-    "EL30V2",
+# Models whose bluetooth encryption requirement is known. Their advertised name
+# carries both the type and the serial number, so they can be added without
+# opening a connection to probe them. Anything else keeps the connection based
+# recognition, which checks both the encrypted and the unencrypted channel
+# before it decides. The AC500 is left out because later revisions encrypt.
+KNOWN_DEVICE_TYPES: dict[str, bool] = {
+    "AC200M": False,
+    "AC300": False,
+    "AP300": True,
+    "CHARGER2": True,
+    "EL10": True,
+    "EL100mini": True,
+    "EL100V2": True,
+    "EL200V2": True,
+    "EL300": True,
+    "EL30V2": True,
 }
 
 
 def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
-    """Identify a known encrypted device from the name it advertises.
+    """Identify a known device from the name it advertises.
 
     Returns the device type, the type with its serial number appended, and
     whether to use encryption. Returns None for anything that is not one of
-    these devices, so the caller falls back to probing it.
+    the known devices, so the caller falls back to probing it.
     """
     if not isinstance(name, str):
         return None
@@ -56,14 +58,14 @@ def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
     # close up the gap when the advertised spelling is unknown.
     dev_type = match[1] if match[1] in DEVICES else match[1].replace(" ", "")
 
-    if dev_type not in ENCRYPTED_DEVICE_TYPES:
+    if dev_type not in KNOWN_DEVICE_TYPES:
         return None
 
     # The entry is built by name later on, so the type has to be buildable
     if DEVICES.get(dev_type) is None:
         return None
 
-    return dev_type, dev_type + match[2], True
+    return dev_type, dev_type + match[2], KNOWN_DEVICE_TYPES[dev_type]
 
 
 class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):

@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, Mock, patch
 
 from bluetti_bt_lib.utils.device_builder import build_device
 from custom_components.bluetti_bt.config_flow import (
-    ENCRYPTED_DEVICE_TYPES,
+    KNOWN_DEVICE_TYPES,
     BluettiConfigFlow,
     identify_from_bt_name,
 )
@@ -18,26 +18,28 @@ class TestIdentifyFromBtName(unittest.TestCase):
     """Test the advertised name parser."""
 
     def test_advertised_names(self):
-        """Names seen on real devices identify the model and its serial."""
+        """Names seen on real devices identify the model, serial and channel."""
         cases = [
-            ("AP3002519000242488", "AP300"),
-            ("EL102543110143137", "EL10"),
-            ("EL100V22539111584127", "EL100V2"),
-            ("EL100mini1234567890123", "EL100mini"),
-            ("EL200V21234567890123", "EL200V2"),
-            ("EL30V21234567890123", "EL30V2"),
-            ("EL3001234567890123", "EL300"),
-            ("CHARGER2123456789012", "CHARGER2"),
+            ("AC200M1234567890123", "AC200M", False),
+            ("AC3001234567890123", "AC300", False),
+            ("AP3002519000242488", "AP300", True),
+            ("EL102543110143137", "EL10", True),
+            ("EL100V22539111584127", "EL100V2", True),
+            ("EL100mini1234567890123", "EL100mini", True),
+            ("EL200V21234567890123", "EL200V2", True),
+            ("EL30V21234567890123", "EL30V2", True),
+            ("EL3001234567890123", "EL300", True),
+            ("CHARGER2123456789012", "CHARGER2", True),
         ]
 
-        for advertised, dev_type in cases:
+        for advertised, dev_type, use_encryption in cases:
             with self.subTest(advertised):
                 identified = identify_from_bt_name(advertised)
 
                 self.assertIsNotNone(identified)
                 self.assertEqual(identified[0], dev_type)
                 self.assertEqual(identified[1], advertised)
-                self.assertTrue(identified[2])
+                self.assertEqual(identified[2], use_encryption)
 
     def test_charger_2_advertises_a_space(self):
         """The Charger 2 name is closed up to match the device table key."""
@@ -51,16 +53,20 @@ class TestIdentifyFromBtName(unittest.TestCase):
         # The entry name is built from this, so it has to be buildable
         self.assertEqual(type(build_device(identified[1])).__name__, "CHARGER2")
 
-    def test_every_encrypted_type_is_buildable(self):
+    def test_every_known_type_is_buildable(self):
         """The shortcut only lists types the library can actually build."""
-        for dev_type in ENCRYPTED_DEVICE_TYPES:
+        for dev_type, use_encryption in KNOWN_DEVICE_TYPES.items():
             with self.subTest(dev_type=dev_type):
-                self.assertIsNotNone(identify_from_bt_name(f"{dev_type}12345678"))
+                identified = identify_from_bt_name(f"{dev_type}12345678")
+
+                self.assertIsNotNone(identified)
+                self.assertEqual(identified[2], use_encryption)
+                self.assertIsNotNone(build_device(identified[1]))
 
     def test_other_names_fall_back_to_probing(self):
         """Anything unproven keeps using the connection based recognition."""
         for name in [
-            "AC30012345678",  # unencrypted model
+            "AC50012345678",  # later revisions encrypt
             "EP50012345678",
             "PR30V212345678",
             "PBOX12345678",  # advertises a generic name
@@ -126,6 +132,25 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             flow.context["title_placeholders"], {"name": "EL102543110143137"}
         )
+
+    async def test_known_unencrypted_name_skips_the_probe(self):
+        """A model with a known channel is added without probing it."""
+        flow = self.make_flow()
+        discovery = self.make_discovery("AC3001234567890123")
+
+        with patch(
+            "custom_components.bluetti_bt.config_flow.recognize_device"
+        ) as recognize:
+            result = await flow.async_step_bluetooth(discovery)
+
+        recognize.assert_not_called()
+        self.assertEqual(result, "created")
+
+        manufacturer_data = ManufacturerData.from_dict(
+            flow._discovery_info.manufacturer_data
+        )
+        self.assertEqual(manufacturer_data.dev_type, "AC300")
+        self.assertFalse(manufacturer_data.use_encryption)
 
     async def test_charger_2_name_skips_the_probe(self):
         """The Charger 2 answers on registers the generic probes miss."""
