@@ -14,7 +14,7 @@ from custom_components.bluetti_bt.number import BluettiNumber
 def soc_range_field(name: FieldName) -> NumberField:
     """The SOC range register as the library defines it for the AC300."""
     address = 3015 if name is FieldName.BATTERY_SOC_RANGE_START else 3016
-    return NumberField(name, address, 1, 0, 100, 5)
+    return NumberField(name, address, 1, 5, 100, 1)
 
 
 class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
@@ -64,10 +64,20 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
 
         number.coordinator.async_write_verified.assert_not_awaited()
         number._logger.warning.assert_called_once()
-        self.assertIn("from 0 to 100", str(raised.exception))
+        self.assertIn("from 5 to 100", str(raised.exception))
 
-    async def test_off_step_value_is_written(self):
-        """The library step is a UI hint; the registers take whole percents."""
+    async def test_below_the_app_floor_is_not_written(self):
+        """The app will not take a UPS threshold under 5%."""
+        number = self.make_number()
+
+        with self.assertRaises(ServiceValidationError) as raised:
+            await number.async_set_native_value(4)
+
+        number.coordinator.async_write_verified.assert_not_awaited()
+        self.assertIn("from 5 to 100", str(raised.exception))
+
+    async def test_whole_unit_value_is_written(self):
+        """The sliders move in single units, so any whole value is accepted."""
         number = self.make_number(
             result=SimpleNamespace(
                 write_succeeded=True,
@@ -83,22 +93,6 @@ class TestBluettiNumberWrite(unittest.IsolatedAsyncioTestCase):
             "soc_range_start", 32
         )
         number._logger.warning.assert_not_called()
-
-    async def test_on_step_value_is_written(self):
-        number = self.make_number(
-            result=SimpleNamespace(
-                write_succeeded=True,
-                readback_succeeded=True,
-                verified=True,
-                values={"soc_range_start": 35},
-            )
-        )
-
-        await number.async_set_native_value(35.0)
-
-        number.coordinator.async_write_verified.assert_awaited_once_with(
-            "soc_range_start", 35
-        )
 
     async def test_soc_range_start_must_stay_below_end(self):
         number = self.make_number()

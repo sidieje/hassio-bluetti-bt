@@ -120,8 +120,8 @@ class BluettiNumber(CoordinatorEntity, NumberEntity):
 
         self._attr_native_min_value = field.min if field.min is not None else 0
         self._attr_native_max_value = field.max if field.max is not None else 100
-        # The library's step is a presentation hint for the UI slider (5 for
-        # the SOC range); the registers themselves accept whole percents.
+        # The library's step is a presentation hint for the UI slider; the
+        # settings registers accept whole units, so the profiles declare 1.
         self._attr_native_step = field.step if field.step else 1
         self._attr_mode = NumberMode.AUTO
 
