@@ -73,7 +73,9 @@ async def async_setup_entry(
         # Read-only mirrors of a control entity are informational, so they
         # stay out of the main Sensors section.
         category = (
-            EntityCategory.DIAGNOSTIC if is_mirror else get_category(field_name)
+            EntityCategory.DIAGNOSTIC
+            if is_mirror
+            else get_category(field_name, writable=field.is_writeable())
         )
 
         if unit is not None:

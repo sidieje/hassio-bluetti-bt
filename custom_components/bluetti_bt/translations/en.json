@@ -374,6 +374,12 @@
       }
     },
     "number": {
+      "ctrl_eco_min_power_ac": {
+        "name": "Eco Minimum Power AC"
+      },
+      "ctrl_eco_min_power_dc": {
+        "name": "Eco Minimum Power DC"
+      },
       "soc_range_end": {
         "name": "UPS SOC high"
       },

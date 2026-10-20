@@ -81,10 +81,23 @@ class TestDevicePageGrouping(unittest.TestCase):
         ):
             self.assertEqual(get_category(name), None, f"{name} belongs in Controls")
 
-    def test_eco_thresholds_are_diagnostic(self):
-        """The eco thresholds are read-only, so they are not settings."""
-        for name in (FieldName.CTRL_ECO_MIN_POWER_AC, FieldName.CTRL_ECO_MIN_POWER_DC):
-            self.assertEqual(get_category(name), EntityCategory.DIAGNOSTIC, f"{name}")
+    def test_eco_thresholds_follow_writability(self):
+        """Where the model lets the owner set the eco thresholds they are
+        settings; on the models that only report them they are support detail."""
+        for name in (
+            FieldName.CTRL_ECO_MIN_POWER_AC,
+            FieldName.CTRL_ECO_MIN_POWER_DC,
+        ):
+            self.assertEqual(
+                get_category(name, writable=True),
+                EntityCategory.CONFIG,
+                f"{name} belongs in the Configuration section",
+            )
+            self.assertEqual(
+                get_category(name, writable=False),
+                EntityCategory.DIAGNOSTIC,
+                f"{name} is read-only on this model",
+            )
 
     def test_pack_count_is_diagnostic(self):
         """The pack count register describes the installed hardware, so it is
