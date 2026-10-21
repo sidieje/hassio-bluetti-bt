@@ -36,5 +36,5 @@
     "requirements": [
         "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@f67b7f537e8fbb12d1d0f2a045eb9ba3a68bce79"
     ],
-    "version": "v1.0.7-beta.9"
+    "version": "v1.0.7-beta.10"
 }
