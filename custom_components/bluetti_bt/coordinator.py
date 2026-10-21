@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 import asyncio
-from datetime import timedelta
+from datetime import datetime, timedelta
 import logging
 from time import monotonic
 from typing import Any
@@ -10,7 +10,8 @@ from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant
+from homeassistant.core import CALLBACK_TYPE, HomeAssistant
+from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from bluetti_bt_lib import (
     build_device,
@@ -74,7 +75,13 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.disconnected = False
         self._offline = False
         self._retry_attempt = False
-        self._retry_task: asyncio.Task[None] | None = None
+        # Offline retries are one-shot timers rather than a long-lived task:
+        # Home Assistant's bootstrap waits for every task created during the
+        # setup phase, so a retry loop started by an offline entry at startup
+        # holds up the whole system until bootstrap times out.
+        self._retry_delay_index = 0
+        self._retry_unsub: CALLBACK_TYPE | None = None
+        self._retry_attempt_task: asyncio.Task[None] | None = None
         self._unloading = False
 
         # Walking the battery pack slots costs a selector write and a settle
@@ -197,11 +204,16 @@ class PollingCoordinator(DataUpdateCoordinator):
             )
         self._offline = False
 
+        # Back online, so the next outage starts at the short end of the
+        # backoff again and no retry is left waiting to fire.
+        self._retry_delay_index = 0
+        self._cancel_retry_timer()
+
         self.logger.debug("Connected to %s", mac_loggable(self.config.address))
         return self.client
 
     def _mark_offline(self, message: str) -> None:
-        """Mark the device offline and ensure a retry task is running."""
+        """Mark the device offline and ensure a retry timer is armed."""
         if not self._offline:
             self.logger.warning(message)
         else:
@@ -212,52 +224,83 @@ class PollingCoordinator(DataUpdateCoordinator):
         if self._unloading:
             return
 
-        if self._retry_task is None or self._retry_task.done():
-            self._retry_task = self.hass.async_create_task(
-                self._async_retry_loop()
-            )
+        self._arm_retry_timer()
 
-    async def _async_retry_loop(self) -> None:
-        """Retry discovery independently of the normal polling interval."""
-        delay_index = 0
+    def _arm_retry_timer(self) -> None:
+        """Arm one retry attempt at the current backoff delay.
+
+        A failed attempt re-arms the timer itself, so a pending timer means
+        the next retry is already scheduled and cannot be stacked.
+        """
+        if self._retry_unsub is not None:
+            return
+
+        self._retry_unsub = async_call_later(
+            self.hass,
+            OFFLINE_RETRY_DELAYS[self._retry_delay_index],
+            self._async_retry_attempt,
+        )
+
+    def _cancel_retry_timer(self) -> None:
+        """Cancel a pending retry timer, if one is armed."""
+        if self._retry_unsub is None:
+            return
+
+        unsub, self._retry_unsub = self._retry_unsub, None
+        unsub()
+
+    async def _async_retry_attempt(self, _now: datetime | None = None) -> None:
+        """Make a single connection attempt, then re-arm the next timer.
+
+        async_call_later runs this as a short-lived task when the timer
+        fires, which is after startup has wrapped up, so an entry that was
+        offline at startup cannot hold up bootstrap the way a long-lived
+        retry task did.
+        """
+        self._retry_unsub = None
+        self._retry_attempt_task = asyncio.current_task()
 
         try:
-            while self._offline and not self._unloading:
-                await asyncio.sleep(OFFLINE_RETRY_DELAYS[delay_index])
+            if not self._offline or self._unloading:
+                return
 
-                if not self._offline or self._unloading:
-                    break
+            # The delay that just elapsed was for this attempt, so the next
+            # one is already a step further along the backoff.
+            self._retry_delay_index = min(
+                self._retry_delay_index + 1,
+                len(OFFLINE_RETRY_DELAYS) - 1,
+            )
 
-                self._retry_attempt = True
+            self._retry_attempt = True
+            try:
+                # Attempt the connection directly so a coalesced
+                # coordinator refresh cannot skip the retry.
+                client = await self._async_get_client()
+            except asyncio.CancelledError:
+                raise
+            except Exception as err:
+                self.logger.debug("Offline retry failed: %s", err)
+                client = None
+            finally:
+                self._retry_attempt = False
+
+            if client is not None and self.reader is not None:
                 try:
-                    # Attempt the connection directly so a coalesced
-                    # coordinator refresh cannot skip the retry.
-                    client = await self._async_get_client()
+                    await self.async_request_refresh()
                 except asyncio.CancelledError:
                     raise
                 except Exception as err:
-                    self.logger.debug("Offline retry failed: %s", err)
-                    client = None
-                finally:
-                    self._retry_attempt = False
+                    self.logger.debug(
+                        "Refresh after reconnect failed: %s", err
+                    )
 
-                if client is not None and self.reader is not None:
-                    try:
-                        await self.async_request_refresh()
-                    except asyncio.CancelledError:
-                        raise
-                    except Exception as err:
-                        self.logger.debug(
-                            "Refresh after reconnect failed: %s", err
-                        )
-
-                delay_index = min(
-                    delay_index + 1,
-                    len(OFFLINE_RETRY_DELAYS) - 1,
-                )
+            # A failed attempt leaves the device offline, and the connection
+            # attempt itself may already have armed the next timer.
+            if self._offline and not self._unloading:
+                self._arm_retry_timer()
         finally:
             self._retry_attempt = False
-            self._retry_task = None
+            self._retry_attempt_task = None
 
     async def _async_drop_connection(self, reason: str) -> None:
         """Close the shared connection. Requires connection_lock to be held."""
@@ -317,9 +360,9 @@ class PollingCoordinator(DataUpdateCoordinator):
     async def async_write(self, field: str, value: Any) -> bool:
         """Write a value to the device over the shared connection.
 
-        connection_lock is held for the whole operation so the offline
-        retry loop or an unload cannot drop the shared client while a
-        write is in flight. The wait is bounded by the writer timeout.
+        connection_lock is held for the whole operation so an offline retry
+        attempt or an unload cannot drop the shared client while a write is
+        in flight. The wait is bounded by the writer timeout.
         """
         async with self.connection_lock:
             writer = await self._async_get_writer()
@@ -382,11 +425,13 @@ class PollingCoordinator(DataUpdateCoordinator):
         """Close the persistent connection and cancel offline retries."""
         self._unloading = True
 
-        retry_task, self._retry_task = self._retry_task, None
-        if retry_task is not None:
-            retry_task.cancel()
+        self._cancel_retry_timer()
+
+        attempt_task, self._retry_attempt_task = self._retry_attempt_task, None
+        if attempt_task is not None and not attempt_task.done():
+            attempt_task.cancel()
             try:
-                await retry_task
+                await attempt_task
             except asyncio.CancelledError:
                 pass
 

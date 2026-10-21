@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import unittest
+from datetime import UTC, datetime
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
@@ -16,7 +17,10 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     """Create a coordinator instance without initializing Home Assistant."""
     coordinator = object.__new__(PollingCoordinator)
     coordinator.logger = Mock(spec=logging.Logger)
-    coordinator.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    coordinator.hass = SimpleNamespace(
+        async_create_task=asyncio.create_task,
+        loop=asyncio.get_running_loop(),
+    )
     coordinator.config = SimpleNamespace(
         address="AA:BB:CC:DD:EE:FF",
         name="AC300",
@@ -35,7 +39,9 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator.lock = asyncio.Lock()
     coordinator._offline = False
     coordinator._retry_attempt = False
-    coordinator._retry_task = None
+    coordinator._retry_delay_index = 0
+    coordinator._retry_unsub = None
+    coordinator._retry_attempt_task = None
     coordinator._unloading = False
     coordinator._pack_interval = pack_poll_interval * 60
     coordinator._pack_due_at = 0.0
@@ -49,50 +55,116 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     return coordinator
 
 
+class RetryTimerRecorder:
+    """Stand-in for async_call_later that records the timers it is given."""
+
+    def __init__(self) -> None:
+        self.timers: list[dict] = []
+
+    def __call__(self, _hass, delay, action):
+        """Arm a timer and return the unsub that cancels it."""
+        timer = {"delay": delay, "action": action, "cancelled": False}
+        self.timers.append(timer)
+
+        def cancel() -> None:
+            timer["cancelled"] = True
+
+        return cancel
+
+    @property
+    def pending(self) -> list[dict]:
+        """The timers still armed."""
+        return [timer for timer in self.timers if not timer["cancelled"]]
+
+    def delays(self) -> list[float]:
+        """Every delay that has been armed, in order."""
+        return [timer["delay"] for timer in self.timers]
+
+    def fire(self) -> asyncio.Task:
+        """Arm the pending timer's callback as a task, as Home Assistant does.
+
+        The caller awaits the returned task, or leaves it running when it
+        wants an attempt that is still in flight.
+        """
+        timer = self.pending[-1]
+        timer["cancelled"] = True
+        return asyncio.create_task(timer["action"](datetime.now(UTC)))
+
+
 class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
     """Test offline retry scheduling and state transitions."""
 
     def make_coordinator(self):
         return make_coordinator()
 
+    def patch_call_later(self, recorder: RetryTimerRecorder):
+        """Swap the timer helper for the recorder."""
+        return patch(
+            "custom_components.bluetti_bt.coordinator.async_call_later",
+            new=recorder,
+        )
+
     async def test_retry_delays_are_20_30_60_and_repeat_60(self):
-        """Retry sleeps should follow the configured backoff sequence."""
+        """Failed attempts should follow the backoff and clamp at the last."""
         coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
         coordinator._offline = True
-        delays = []
-        attempts = 0
 
-        async def fake_sleep(delay):
-            delays.append(delay)
-            if len(delays) == 4:
-                coordinator._unloading = True
+        async def fail_attempt() -> None:
+            # The real connection attempt reports its own failure.
+            coordinator._mark_offline("Unable to connect")
 
-        async def fake_get_client():
-            nonlocal attempts
-            attempts += 1
-            return None
+        coordinator._async_get_client = fail_attempt
 
-        with (
-            patch(
-                "custom_components.bluetti_bt.coordinator.asyncio.sleep",
-                new=fake_sleep,
-            ),
-            patch.object(
-                coordinator, "_async_get_client", new=fake_get_client
-            ),
-        ):
-            await coordinator._async_retry_loop()
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
 
-        self.assertEqual(delays, [20, 30, 60, 60])
-        self.assertEqual(attempts, 3)
+            for _ in range(3):
+                await timers.fire()
+
+        self.assertEqual([20, 30, 60, 60], timers.delays())
+        self.assertEqual(list(OFFLINE_RETRY_DELAYS) + [60], timers.delays())
+        self.assertEqual(2, coordinator._retry_delay_index)
         self.assertFalse(coordinator._retry_attempt)
-        self.assertIsNone(coordinator._retry_task)
+        self.assertIsNone(coordinator._retry_attempt_task)
+
+    async def test_timer_fires_exactly_one_connection_attempt(self):
+        """One armed timer means one attempt, and a failure re-arms later."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+        coordinator._offline = True
+        coordinator._async_get_client = AsyncMock(return_value=None)
+
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
+            self.assertEqual([20], timers.delays())
+
+            await timers.fire()
+
+        coordinator._async_get_client.assert_awaited_once()
+        self.assertEqual([30], timers.delays()[1:])
+        self.assertEqual(1, len(timers.pending))
+        self.assertFalse(coordinator._retry_attempt)
+        self.assertIsNone(coordinator._retry_attempt_task)
+
+    async def test_mark_offline_does_not_stack_retries(self):
+        """Repeated failures while a timer is pending must not add more."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
+            coordinator._mark_offline("Device not found")
+            coordinator._mark_offline("Unable to connect")
+
+        self.assertEqual([20], timers.delays())
+        self.assertEqual(1, len(timers.pending))
 
     async def test_offline_warning_is_logged_only_once(self):
         """Repeated failures should not produce repeated warnings."""
         coordinator = self.make_coordinator()
 
-        with patch.object(coordinator, "_async_retry_loop", new=AsyncMock()):
+        with self.patch_call_later(RetryTimerRecorder()):
             coordinator._mark_offline("Device not found")
             coordinator._mark_offline("Device not found")
             coordinator._mark_offline("Unable to connect")
@@ -100,6 +172,105 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
         coordinator.logger.warning.assert_called_once_with("Device not found")
         self.assertEqual(coordinator.logger.debug.call_count, 2)
         self.assertTrue(coordinator._offline)
+
+    async def test_mark_offline_does_not_arm_a_retry_while_unloading(self):
+        """Nothing may be scheduled once the entry is on its way out."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+        coordinator._unloading = True
+
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
+
+        self.assertEqual([], timers.delays())
+        self.assertIsNone(coordinator._retry_unsub)
+
+    async def test_unload_cancels_the_pending_retry_timer(self):
+        """Unloading should leave no timer armed and no attempt running."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+        coordinator._offline = True
+        coordinator._async_get_client = AsyncMock()
+
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
+            await coordinator.async_unload()
+
+            # A callback that still reaches the coordinator must be ignored.
+            await timers.timers[0]["action"](datetime.now(UTC))
+
+        self.assertTrue(timers.timers[0]["cancelled"])
+        self.assertEqual([], timers.pending)
+        self.assertIsNone(coordinator._retry_unsub)
+        self.assertTrue(coordinator._unloading)
+        coordinator._async_get_client.assert_not_awaited()
+
+    async def test_unload_cancels_an_in_flight_attempt(self):
+        """An attempt that is mid-connection is cancelled on unload."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+        coordinator._offline = True
+        started = asyncio.Event()
+
+        async def blocking_attempt() -> None:
+            started.set()
+            await asyncio.Future()
+
+        coordinator._async_get_client = blocking_attempt
+
+        with self.patch_call_later(timers):
+            coordinator._mark_offline("Device not found")
+            attempt = timers.fire()
+            await started.wait()
+            self.assertIs(attempt, coordinator._retry_attempt_task)
+
+            await coordinator.async_unload()
+
+        self.assertTrue(attempt.cancelled())
+        self.assertIsNone(coordinator._retry_attempt_task)
+        self.assertFalse(coordinator._retry_attempt)
+
+    async def test_recovery_resets_the_backoff_and_cancels_the_timer(self):
+        """Coming back online drops the pending retry and the delay index."""
+        coordinator = self.make_coordinator()
+        timers = RetryTimerRecorder()
+        coordinator._offline = True
+        coordinator._retry_attempt = True
+        coordinator._retry_delay_index = 2
+        client = Mock()
+        client.is_connected = True
+        device = SimpleNamespace(name="AC300")
+
+        with (
+            self.patch_call_later(timers),
+            patch(
+                "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+                new=AsyncMock(return_value=device),
+            ),
+            patch(
+                "custom_components.bluetti_bt.coordinator.establish_connection",
+                new=AsyncMock(return_value=client),
+            ),
+            patch(
+                "custom_components.bluetti_bt.coordinator.DeviceReader",
+                return_value=Mock(),
+            ),
+        ):
+            coordinator._mark_offline("Device not found")
+            self.assertEqual([60], timers.delays())
+
+            self.assertIs(client, await coordinator._async_get_client())
+
+            self.assertFalse(coordinator._offline)
+            self.assertEqual(0, coordinator._retry_delay_index)
+            self.assertTrue(timers.timers[0]["cancelled"])
+            self.assertIsNone(coordinator._retry_unsub)
+
+            # A later outage starts at the short end of the backoff again.
+            coordinator._offline = True
+            coordinator._mark_offline("Device not found")
+
+        self.assertEqual([60, 20], timers.delays())
 
     async def test_polling_does_not_attempt_connection_while_offline(self):
         """Normal polling should respect the offline retry gate."""
@@ -116,35 +287,11 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
         self.assertIsNone(client)
         find_device.assert_not_awaited()
 
-    async def test_unload_cancels_sleeping_retry_task(self):
-        """Unloading should cancel the retry loop before dropping the connection."""
-        coordinator = self.make_coordinator()
-        coordinator._offline = True
-        started = asyncio.Event()
-
-        async def fake_sleep(_delay):
-            started.set()
-            await asyncio.Future()
-
-        with patch(
-            "custom_components.bluetti_bt.coordinator.asyncio.sleep",
-            new=fake_sleep,
-        ):
-            coordinator._retry_task = asyncio.create_task(
-                coordinator._async_retry_loop()
-            )
-            await started.wait()
-            await coordinator.async_unload()
-
-        self.assertTrue(coordinator._unloading)
-        self.assertIsNone(coordinator._retry_task)
-
     async def test_successful_connection_logs_recovery(self):
         """Successful reader initialization clears the offline state."""
         coordinator = self.make_coordinator()
         coordinator._offline = True
         coordinator._retry_attempt = True
-        coordinator.hass.loop = asyncio.get_running_loop()
         client = Mock()
         client.is_connected = True
         device = SimpleNamespace(name="AC300")
@@ -184,7 +331,6 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
         coordinator = self.make_coordinator()
         coordinator._offline = True
         coordinator._retry_attempt = True
-        coordinator.hass.loop = asyncio.get_running_loop()
         client = Mock()
         client.is_connected = True
         device = SimpleNamespace(name="AC300")

@@ -6,7 +6,7 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from homeassistant.config_entries import ConfigEntryNotReady
+from homeassistant.config_entries import ConfigEntryNotReady, ConfigEntryState
 from homeassistant.exceptions import HomeAssistantError
 
 from custom_components.bluetti_bt import (
@@ -25,6 +25,7 @@ class FakeEntry:
     def __init__(self, options: dict | None = None):
         self.entry_id = "entry-1"
         self.title = "AC300"
+        self.state = ConfigEntryState.SETUP_IN_PROGRESS
         self.data = {
             "address": "AA:BB:CC:DD:EE:FF",
             "name": "AC300",
@@ -56,6 +57,8 @@ def make_hass() -> SimpleNamespace:
     """Home Assistant stand-in with the pieces setup uses."""
     return SimpleNamespace(
         data={},
+        loop=asyncio.get_running_loop(),
+        async_create_task=asyncio.create_task,
         config_entries=SimpleNamespace(
             async_forward_entry_setups=AsyncMock(),
             async_unload_platforms=AsyncMock(return_value=True),
@@ -271,12 +274,47 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
         client.disconnect.assert_awaited_once()
         reader.disconnect.assert_awaited_once()
 
+    async def test_offline_setup_arms_a_timer_not_a_task(self):
+        """An offline entry must not leave a task for bootstrap to wait on."""
+        hass = make_hass()
+        entry = FakeEntry()
+        # The library wants a name with the serial appended, like the devices
+        # advertise over bluetooth.
+        entry.data = {**entry.data, "name": "AC3001234567890"}
+        before = asyncio.all_tasks()
+
+        with patch(
+            "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+            new=AsyncMock(return_value=None),
+        ):
+            # The entry still loads when the device is unreachable, which is
+            # what the offline retry exists for.
+            self.assertTrue(await async_setup_entry(hass, entry))
+
+        coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
+
+        self.assertTrue(coordinator._offline)
+        self.assertIsNone(coordinator.data)
+        self.assertIsNotNone(coordinator._retry_unsub)
+
+        # Home Assistant's bootstrap waits for every task created during the
+        # setup phase, so an offline entry may only arm a retry timer.
+        self.assertEqual(set(), asyncio.all_tasks() - before)
+
+        await run_on_unload(entry)
+
+        self.assertIsNone(coordinator._retry_unsub)
+        self.assertEqual(set(), asyncio.all_tasks() - before)
+
 
 def make_real_coordinator() -> PollingCoordinator:
     """Coordinator instance built without initializing Home Assistant."""
     coordinator = object.__new__(PollingCoordinator)
     coordinator.logger = Mock(spec=logging.Logger)
-    coordinator.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    coordinator.hass = SimpleNamespace(
+        async_create_task=asyncio.create_task,
+        loop=asyncio.get_running_loop(),
+    )
     coordinator.config = SimpleNamespace(
         address="AA:BB:CC:DD:EE:FF",
         name="AC300",
@@ -295,7 +333,9 @@ def make_real_coordinator() -> PollingCoordinator:
     coordinator.lock = asyncio.Lock()
     coordinator._offline = False
     coordinator._retry_attempt = False
-    coordinator._retry_task = None
+    coordinator._retry_delay_index = 0
+    coordinator._retry_unsub = None
+    coordinator._retry_attempt_task = None
     coordinator._unloading = False
     coordinator._pack_interval = 0
     coordinator._pack_due_at = 0.0
