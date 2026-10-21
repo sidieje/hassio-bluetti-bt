@@ -15,10 +15,10 @@
     "step": {
       "init": {
         "data": {
-          "polling_interval": "Datenabruf-Intervall in Sekunden (Neustart erforderlich)",
-          "polling_timeout": "Datenabruf-Timeout in Sekunden (Neustart erforderlich)",
-          "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)",
-          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = aus, Neustart erforderlich)",
+          "polling_interval": "Datenabruf-Intervall in Sekunden",
+          "polling_timeout": "Datenabruf-Timeout in Sekunden",
+          "max_retries": "Maximale Verbindungsversuche",
+          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = aus)",
           "use_encryption": "Erkannte Bluetooth-Verschlüsselung (Gerät wird neu geladen)"
         },
         "data_description": {

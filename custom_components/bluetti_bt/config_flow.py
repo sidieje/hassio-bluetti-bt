@@ -247,7 +247,8 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
             if use_encryption != stored:
                 # The channel is chosen while the entry is set up, so changing
-                # it needs a restart. There is no update listener.
+                # it needs a restart. The other options are applied to the
+                # running coordinator by the entry's update listener.
                 self.hass.config_entries.async_schedule_reload(
                     self.config_entry.entry_id
                 )
