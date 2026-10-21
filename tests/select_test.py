@@ -26,7 +26,12 @@ def result(
     values: dict | None = None,
     verified: bool = True,
 ) -> SimpleNamespace:
-    """A WriteVerificationResult stand-in."""
+    """A WriteVerificationResult stand-in.
+
+    ``verified`` is the pinned library's own verdict: it compares the read-back
+    against the option the requested value names, so it is False exactly when
+    the device reports something other than what was written.
+    """
     return SimpleNamespace(
         write_succeeded=write_succeeded,
         readback_succeeded=readback_succeeded,
@@ -73,7 +78,9 @@ class TestSelectWrite(unittest.IsolatedAsyncioTestCase):
 
     async def test_read_back_of_a_different_option_is_a_mismatch(self):
         select = make_select(
-            write_result=result(values={"ctrl_ups_mode": UpsMode.STANDARD})
+            write_result=result(
+                values={"ctrl_ups_mode": UpsMode.STANDARD}, verified=False
+            )
         )
 
         with self.assertRaises(HomeAssistantError) as raised:
@@ -86,16 +93,26 @@ class TestSelectWrite(unittest.IsolatedAsyncioTestCase):
             raised.exception.translation_placeholders,
         )
 
-    async def test_pinned_library_verified_flag_is_not_required(self):
-        """The pinned library compares the name to the member, so verified is
-        False for a select even when the device did change."""
-        select = make_select(
+    async def test_the_library_verdict_is_what_the_entity_trusts(self):
+        """The pinned library normalises the option name before comparing, so
+        its own verdict already says whether the device applied the change."""
+        applied = make_select(
             write_result=result(
-                values={"ctrl_ups_mode": UpsMode.PV_PRIORITY}, verified=False
+                values={"ctrl_ups_mode": UpsMode.PV_PRIORITY}, verified=True
+            )
+        )
+        await applied.async_select_option("PV_PRIORITY")
+
+        stale = make_select(
+            write_result=result(
+                values={"ctrl_ups_mode": UpsMode.STANDARD}, verified=False
             )
         )
 
-        await select.async_select_option("PV_PRIORITY")
+        with self.assertRaises(HomeAssistantError) as raised:
+            await stale.async_select_option("PV_PRIORITY")
+
+        self.assertEqual("select_write_mismatch", raised.exception.translation_key)
 
     async def test_rejected_write_raises(self):
         select = make_select(write_result=result(write_succeeded=False))
@@ -161,7 +178,9 @@ class TestSelectWrite(unittest.IsolatedAsyncioTestCase):
 
     async def test_failed_write_leaves_the_entity_on_the_device_value(self):
         select = make_select(
-            write_result=result(values={"ctrl_ups_mode": UpsMode.STANDARD})
+            write_result=result(
+                values={"ctrl_ups_mode": UpsMode.STANDARD}, verified=False
+            )
         )
         select.current_option = "PV_PRIORITY"
 
