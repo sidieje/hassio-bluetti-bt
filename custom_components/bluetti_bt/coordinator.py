@@ -26,6 +26,10 @@ from .types import FullDeviceConfig
 
 OFFLINE_RETRY_DELAYS = (20, 30, 60)
 
+# A pack walk that answers fewer packs than the station reports is retried on
+# the following cycles before its readings are used anyway.
+PACK_WALK_RETRIES = 2
+
 
 class PollingCoordinator(DataUpdateCoordinator):
     """Polling coordinator.
@@ -71,14 +75,17 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._unloading = False
 
         # Walking the battery pack slots costs a selector write and a settle
-        # wait per slot, which is most of a poll cycle on a tower station.
-        # Most cycles read the station only and reuse the pack values from the
-        # last walk; the walk runs again when the interval expires.
+        # wait per slot, which is most of a poll cycle on a tower station, and
+        # a pack that does not answer leaves a hole in the readings. So pack
+        # polling is off unless the user asks for it, and when it is on the
+        # walk runs on a slower clock while the values from the last complete
+        # walk are reused in between.
         self._pack_interval = config.pack_poll_interval * 60
         self._pack_due_at = 0.0
         self._pack_values: dict[str, Any] = {}
         self._pack_num: int | None = None
         self._pack_prefixes: tuple[str, ...] = ()
+        self._pack_retries = 0
 
         if self.bluetti_device is None:
             self.logger.error("Device is unknown type: %s", config.name)
@@ -178,6 +185,7 @@ class PollingCoordinator(DataUpdateCoordinator):
         # A fresh connection walks the slots on its first cycle, so the pack
         # entities and the slot watcher start from what the device reports now.
         self._pack_due_at = 0.0
+        self._pack_retries = 0
 
         if self._offline:
             self.logger.info(
@@ -385,9 +393,25 @@ class PollingCoordinator(DataUpdateCoordinator):
     def _packs_due(self) -> bool:
         """Whether this cycle should walk the battery pack slots."""
         if self._pack_interval <= 0:
-            return True
+            return False
 
         return monotonic() >= self._pack_due_at
+
+    def _walk_complete(self, data: dict[str, Any]) -> bool:
+        """Whether a walk answered every pack the station says it has.
+
+        A pack that fails to answer leaves its slot out of pack_slots, so a
+        short walk is a flaky read rather than a pack that was removed. The
+        station's own pack count is read every cycle, which is what makes the
+        walk checkable.
+        """
+        pack_num = data.get(FieldName.PACK_NUM.value)
+        slots = data.get(FieldName.PACK_SLOTS.value)
+
+        if not isinstance(pack_num, int) or not isinstance(slots, list):
+            return False
+
+        return len(slots) >= pack_num
 
     def _note_packs(self, data: dict[str, Any], walked: bool) -> None:
         """Track what the cycle said about the battery packs.
@@ -440,7 +464,21 @@ class PollingCoordinator(DataUpdateCoordinator):
             return None
 
         if include_packs:
-            self._note_packs(data, walked=True)
+            if self._walk_complete(data) or self._pack_retries >= PACK_WALK_RETRIES:
+                self._pack_retries = 0
+                self._note_packs(data, walked=True)
+            else:
+                # A walk that lost a pack is a flaky read, so keep the last
+                # complete walk rather than showing a pack that is still
+                # there, and try again on the next cycle.
+                self._pack_retries += 1
+                self._pack_due_at = monotonic()
+                data.update(self._pack_values)
+                self.logger.debug(
+                    "Pack walk answered %s of %s packs, trying again next cycle",
+                    len(data.get(FieldName.PACK_SLOTS.value) or []),
+                    data.get(FieldName.PACK_NUM.value),
+                )
         else:
             data.update(self._pack_values)
             self._note_packs(data, walked=False)

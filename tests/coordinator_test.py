@@ -41,6 +41,7 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator._pack_due_at = 0.0
     coordinator._pack_values = {}
     coordinator._pack_num = None
+    coordinator._pack_retries = 0
     coordinator._pack_prefixes = tuple(
         f"pack_{slot}_" for slot in range(1, coordinator.bluetti_device.max_packs + 1)
     )
@@ -390,6 +391,23 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
 
     STATION = {"pack_num": 2, "battery_soc": 55}
 
+    def full_walk(self) -> dict:
+        """A walk that answered every pack the station reported."""
+        return {
+            **self.STATION,
+            "pack_slots": [2, 3],
+            "pack_2_voltage": 51.7,
+            "pack_3_voltage": 51.6,
+        }
+
+    def partial_walk(self) -> dict:
+        """A walk where one pack did not answer."""
+        return {
+            **self.STATION,
+            "pack_slots": [2],
+            "pack_2_voltage": 51.7,
+        }
+
     def make_coordinator(self, pack_poll_interval: int, cycles: list[dict]):
         """A coordinator whose reader answers each cycle from the list."""
         coordinator = make_coordinator(pack_poll_interval)
@@ -401,10 +419,13 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
         """Whether the last cycle asked the reader to walk the slots."""
         return coordinator.reader.read.await_args.kwargs["include_packs"]
 
+    def walk_next_cycle(self, coordinator) -> None:
+        """Open the next cycle for a walk without waiting out the interval."""
+        coordinator._pack_due_at = 0.0
+
     async def test_first_cycle_walks_the_slots(self):
         """A fresh connection reports what the device has in it now."""
-        walk = {**self.STATION, "pack_slots": [2, 3], "pack_2_voltage": 51.7}
-        coordinator = self.make_coordinator(2, [walk])
+        coordinator = self.make_coordinator(2, [self.full_walk()])
 
         data = await coordinator._async_update_data()
 
@@ -413,13 +434,7 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
 
     async def test_later_cycles_reuse_the_pack_values(self):
         """Skipping the walk still reports the packs from the last walk."""
-        walk = {
-            **self.STATION,
-            "pack_slots": [2, 3],
-            "pack_2_voltage": 51.7,
-            "pack_3_voltage": 51.6,
-        }
-        coordinator = self.make_coordinator(2, [walk, dict(self.STATION)])
+        coordinator = self.make_coordinator(2, [self.full_walk(), dict(self.STATION)])
 
         await coordinator._async_update_data()
         data = await coordinator._async_update_data()
@@ -430,21 +445,21 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(data["pack_2_voltage"], 51.7)
         self.assertNotIn("pack_4_voltage", data)
 
-    async def test_zero_interval_walks_every_cycle(self):
-        """An interval of zero keeps the old behaviour."""
-        coordinator = self.make_coordinator(0, [dict(self.STATION)] * 2)
+    async def test_zero_interval_never_walks_the_slots(self):
+        """Pack polling is off unless the user asks for it."""
+        coordinator = self.make_coordinator(0, [dict(self.STATION) for _ in range(2)])
 
         await coordinator._async_update_data()
-        await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
 
-        self.assertTrue(await self.walked(coordinator))
+        self.assertFalse(await self.walked(coordinator))
+        self.assertNotIn("pack_slots", data)
 
     async def test_pack_count_change_walks_the_next_cycle(self):
         """The pack count is a station register, so a swap is noticed early."""
-        walk = {**self.STATION, "pack_slots": [2, 3], "pack_2_voltage": 51.7}
         coordinator = self.make_coordinator(
             2,
-            [walk, {**self.STATION, "pack_num": 3}, walk],
+            [self.full_walk(), {**self.STATION, "pack_num": 3}, self.full_walk()],
         )
 
         await coordinator._async_update_data()
@@ -454,23 +469,70 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await self.walked(coordinator))
 
     async def test_a_walk_replaces_values_from_the_previous_walk(self):
-        """A pack that was removed does not linger in the reused values."""
-        first = {**self.STATION, "pack_slots": [2], "pack_2_voltage": 51.7}
-        second = {**self.STATION, "pack_slots": [4], "pack_4_voltage": 51.9}
-        coordinator = self.make_coordinator(2, [first, dict(self.STATION), second, dict(self.STATION)])
+        """A pack that was moved does not linger in the reused values."""
+        moved = {
+            **self.STATION,
+            "pack_slots": [1, 4],
+            "pack_1_voltage": 51.9,
+            "pack_4_voltage": 51.8,
+        }
+        coordinator = self.make_coordinator(
+            2,
+            [self.full_walk(), dict(self.STATION), moved, dict(self.STATION)],
+        )
 
         await coordinator._async_update_data()
         await coordinator._async_update_data()
-
-        # The interval has not expired, so the test opens the next walk.
-        coordinator._pack_due_at = 0.0
+        self.walk_next_cycle(coordinator)
 
         await coordinator._async_update_data()
         data = await coordinator._async_update_data()
 
-        self.assertEqual(data["pack_slots"], [4])
-        self.assertEqual(data["pack_4_voltage"], 51.9)
+        self.assertEqual(data["pack_slots"], [1, 4])
+        self.assertEqual(data["pack_4_voltage"], 51.8)
         self.assertNotIn("pack_2_voltage", data)
+
+    async def test_incomplete_walk_keeps_the_previous_pack_values(self):
+        """A pack that failed to answer is not reported as missing."""
+        coordinator = self.make_coordinator(
+            2,
+            [self.full_walk(), self.partial_walk(), dict(self.STATION)],
+        )
+
+        await coordinator._async_update_data()
+        self.walk_next_cycle(coordinator)
+
+        data = await coordinator._async_update_data()
+
+        self.assertTrue(await self.walked(coordinator))
+        self.assertEqual(data["pack_slots"], [2, 3])
+        self.assertEqual(data["pack_3_voltage"], 51.6)
+
+        # The retry is on the next cycle rather than after the whole interval.
+        await coordinator._async_update_data()
+        self.assertTrue(await self.walked(coordinator))
+
+    async def test_repeated_incomplete_walks_are_used_anyway(self):
+        """A station that never answers a pack is not walked forever."""
+        coordinator = self.make_coordinator(
+            2,
+            [self.full_walk()] + [self.partial_walk() for _ in range(3)],
+        )
+
+        # The complete walk seeds the values the retries fall back to.
+        await coordinator._async_update_data()
+
+        for _ in range(2):
+            self.walk_next_cycle(coordinator)
+            data = await coordinator._async_update_data()
+            self.assertEqual(data["pack_slots"], [2, 3])
+
+        # The next incomplete walk is used rather than retrying forever.
+        self.walk_next_cycle(coordinator)
+        data = await coordinator._async_update_data()
+
+        self.assertEqual(data["pack_slots"], [2])
+        self.assertNotIn("pack_3_voltage", data)
 
 
 if __name__ == "__main__":

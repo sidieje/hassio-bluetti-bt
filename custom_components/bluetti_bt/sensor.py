@@ -108,7 +108,15 @@ async def async_setup_entry(
     # The library polls each pack and returns its values as pack_N_<field>
     # keys. They belong on the main device: separate pack devices only add
     # clutter, and empty slots would show up as phantom devices.
-    pack_slots = occupied_slots(coordinator.data)
+    # Pack polling is off unless the user set an interval, and a station whose
+    # slots are never walked has no opinion about which ones are occupied, so
+    # that case counts the slots empty: the entities stay out of view instead
+    # of leaving a row of unavailable readings on the device page.
+    pack_slots = (
+        occupied_slots(coordinator.data)
+        if config.pack_poll_interval > 0
+        else set()
+    )
     pack_entities: dict[int, list[BluettiSensor]] = {}
 
     for field in bluetti_device.pack_fields:
@@ -148,7 +156,8 @@ async def async_setup_entry(
 
     async_add_entities(sensors_to_add)
 
-    watch_pack_slots(hass, entry, coordinator, logger)
+    if config.pack_poll_interval > 0:
+        watch_pack_slots(hass, entry, coordinator, logger)
 
 
 class BluettiSensor(CoordinatorEntity, SensorEntity):

@@ -11,7 +11,10 @@ ABORT_REASON_TIMEOUT = "invalid_timeout"
 ABORT_REASON_RETRIES = "invalid_retries"
 ABORT_REASON_PACK_INTERVAL = "invalid_pack_interval"
 
-DEFAULT_PACK_POLL_INTERVAL = 2
+# Pack polling is off by default: the slot walk is most of a poll cycle and
+# its readings are the least reliable part of it. Minutes above zero turn it
+# on at that cadence.
+DEFAULT_PACK_POLL_INTERVAL = 0
 
 
 class OptionalDeviceConfig:

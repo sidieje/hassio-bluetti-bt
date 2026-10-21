@@ -18,7 +18,7 @@
           "polling_interval": "Datenabruf-Intervall in Sekunden (Neustart erforderlich)",
           "polling_timeout": "Datenabruf-Timeout in Sekunden (Neustart erforderlich)",
           "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)",
-          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = jeder Durchlauf, Neustart erforderlich)"
+          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = keine Pack-Abfrage, Neustart erforderlich)"
         }
       }
     },
