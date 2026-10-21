@@ -59,29 +59,37 @@ class OptionalDeviceConfig:
             CONF_PACK_POLL_INTERVAL: self.pack_poll_interval,
         }
 
-    @property
-    def schema(self) -> vol.Schema:
-        return vol.Schema(
-            {
-                vol.Required(
-                    CONF_POLLING_INTERVAL,
-                    default=self.polling_interval,
-                ): int,
-                vol.Required(
-                    CONF_POLLING_TIMEOUT,
-                    default=self.polling_timeout,
-                ): int,
-                vol.Required(
-                    CONF_MAX_RETRIES,
-                    default=self.max_retries,
-                ): int,
+    def schema(self, has_packs: bool = True) -> vol.Schema:
+        """The options form.
+
+        Pack polling is only offered where it can do something: the tower
+        stations have pack registers behind a selector, the rest do not.
+        """
+        fields: Dict[Any, Any] = {
+            vol.Required(
+                CONF_POLLING_INTERVAL,
+                default=self.polling_interval,
+            ): int,
+            vol.Required(
+                CONF_POLLING_TIMEOUT,
+                default=self.polling_timeout,
+            ): int,
+            vol.Required(
+                CONF_MAX_RETRIES,
+                default=self.max_retries,
+            ): int,
+        }
+
+        if has_packs:
+            fields[
                 vol.Required(
                     CONF_PACK_POLL_INTERVAL,
                     default=self.pack_poll_interval,
-                ): int,
-            }
-        )
+                )
+            ] = int
 
-    def schema_with(self, extra: Dict[Any, Any]) -> vol.Schema:
+        return vol.Schema(fields)
+
+    def schema_with(self, extra: Dict[Any, Any], has_packs: bool = True) -> vol.Schema:
         """The options form with extra fields appended."""
-        return vol.Schema({**self.schema.schema, **extra})
+        return vol.Schema({**self.schema(has_packs).schema, **extra})

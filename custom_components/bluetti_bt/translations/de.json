@@ -18,7 +18,12 @@
           "polling_interval": "Datenabruf-Intervall in Sekunden (Neustart erforderlich)",
           "polling_timeout": "Datenabruf-Timeout in Sekunden (Neustart erforderlich)",
           "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)",
-          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = keine Pack-Abfrage, Neustart erforderlich)"
+          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = keine Pack-Abfrage, Neustart erforderlich)",
+          "use_encryption": "Verschlüsselte Bluetooth-Kommunikation (Gerät wird neu geladen)"
+        },
+        "data_description": {
+          "pack_poll_interval": "Jeder Durchlauf beschreibt einen Slot und wartet dessen Antwort ab – das kostet mehrere Sekunden pro Pack. Lassen Sie den Wert auf 0, wenn Sie die Sensoren je Pack nicht benötigen.",
+          "use_encryption": "Beim Hinzufügen des Geräts erkannt. Ändern Sie dies nur, wenn Sie glauben, dass die Erkennung falsch war."
         }
       }
     },

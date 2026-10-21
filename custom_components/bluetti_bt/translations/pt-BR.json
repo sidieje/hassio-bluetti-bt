@@ -16,7 +16,12 @@
           "polling_interval": "Intervalo de consulta em segundos (reinicialização necessária)",
           "polling_timeout": "Tempo limite de consulta em segundos (reinicialização necessária)",
           "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)",
-          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = sem consulta de packs, reinicialização necessária)"
+          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = sem consulta de packs, reinicialização necessária)",
+          "use_encryption": "Comunicação bluetooth criptografada (recarrega o dispositivo)"
+        },
+        "data_description": {
+          "pack_poll_interval": "Cada verificação escreve em um slot e espera a resposta, o que custa vários segundos por pack. Deixe em 0 se não quiser os sensores por pack.",
+          "use_encryption": "Detectado ao adicionar o dispositivo. Altere apenas se acreditar que a detecção estava errada."
         }
       }
     },

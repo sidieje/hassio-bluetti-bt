@@ -15,7 +15,7 @@ from bluetti_bt_lib import recognize_device
 from bluetti_bt_lib.devices import DEVICES, DEVICE_NAME_RE
 
 from .types import (
-    CONF_ENCRYPTION_ASSUMED,
+    CONF_TYPE,
     CONF_USE_ENCRYPTION,
     InitialDeviceConfig,
     ManufacturerData,
@@ -72,6 +72,26 @@ def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
         return None
 
     return dev_type, dev_type + match[2], KNOWN_DEVICE_TYPES[dev_type]
+
+
+def has_battery_packs(dev_type: Any) -> bool:
+    """Whether a model has battery pack registers to walk.
+
+    Only the tower stations keep their packs behind a selector, so the options
+    form should not offer pack polling to a Charger 2 or an EL100 V2, where it
+    could only ever do nothing.
+    """
+    device_cls = DEVICES.get(dev_type) if isinstance(dev_type, str) else None
+
+    if device_cls is None:
+        return False
+
+    try:
+        device = device_cls()
+    except Exception:  # a model that cannot be built has nothing to offer
+        return False
+
+    return bool(device.max_packs) and bool(device.pack_fields)
 
 
 class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
@@ -199,9 +219,10 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Manage the options."""
-        # Only entries whose channel was assumed from a table can correct it.
-        # A probed entry already asked the device which one it answers on.
-        assumed = bool(self.config_entry.data.get(CONF_ENCRYPTION_ASSUMED, False))
+        # The checkbox shows what was detected when the device was added, so a
+        # device that answered on the plain channel is offered an unticked box.
+        stored = bool(self.config_entry.data.get(CONF_USE_ENCRYPTION, False))
+        has_packs = has_battery_packs(self.config_entry.data.get(CONF_TYPE))
 
         if user_input is not None:
             config = OptionalDeviceConfig.from_dict(user_input)
@@ -211,23 +232,22 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
             if reason is not None:
                 return self.async_abort(reason=reason)
 
+            use_encryption = bool(user_input.get(CONF_USE_ENCRYPTION, stored))
+
             data = {
                 **self.config_entry.data,
                 **config.as_dict,
+                CONF_USE_ENCRYPTION: use_encryption,
             }
-
-            if assumed:
-                data[CONF_USE_ENCRYPTION] = bool(
-                    user_input.get(CONF_USE_ENCRYPTION, False)
-                )
 
             self.hass.config_entries.async_update_entry(
                 self.config_entry,
                 data=data,
             )
 
-            if assumed:
-                # No update listener, so restart the entry to pick it up
+            if use_encryption != stored:
+                # The channel is chosen while the entry is set up, so changing
+                # it needs a restart. There is no update listener.
                 self.hass.config_entries.async_schedule_reload(
                     self.config_entry.entry_id
                 )
@@ -239,19 +259,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
 
         defaults = OptionalDeviceConfig.from_dict(self.config_entry.data)
 
-        if assumed:
-            schema = defaults.schema_with(
-                {
-                    vol.Required(
-                        CONF_USE_ENCRYPTION,
-                        default=bool(
-                            self.config_entry.data.get(CONF_USE_ENCRYPTION, False)
-                        ),
-                    ): bool
-                }
-            )
-        else:
-            schema = defaults.schema
+        schema = defaults.schema_with(
+            {
+                vol.Required(CONF_USE_ENCRYPTION, default=stored): bool,
+            },
+            has_packs=has_packs,
+        )
 
         return self.async_show_form(
             step_id="init",
