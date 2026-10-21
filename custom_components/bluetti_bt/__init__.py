@@ -9,7 +9,6 @@ from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
-from homeassistant.helpers.update_coordinator import UpdateFailed
 
 from .utils import mac_loggable
 from .const import (
@@ -29,10 +28,20 @@ PLATFORMS: List[Platform] = [
 ]
 
 
+def entry_config(entry: ConfigEntry) -> FullDeviceConfig | None:
+    """Config for an entry.
+
+    The options flow writes its values into both the entry data and the
+    entry options, and the options are what the user changed last, so they
+    win where the two disagree.
+    """
+    return FullDeviceConfig.from_dict({**entry.data, **entry.options})
+
+
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Bluetti Powerstation from a config entry."""
 
-    config = FullDeviceConfig.from_dict(entry.data)
+    config = entry_config(entry)
 
     if config is None:
         logging.getLogger(__name__).error(
@@ -58,27 +67,89 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # Create coordinator for polling
     logger.debug("Creating coordinator")
-    coordinator = PollingCoordinator(
-        hass,
-        config,
-        lock,
-    )
-    try:
-        await coordinator.async_config_entry_first_refresh()
-    except (UpdateFailed, TimeoutError, OSError) as err:
-        logger.warning(
-            "Initial Bluetti poll failed; continuing setup and retrying later: %s",
-            err,
-        )
-    hass.data[DOMAIN][entry.entry_id].setdefault(DATA_COORDINATOR, coordinator)
+    coordinator = PollingCoordinator(hass, config, lock, entry)
+
+    def forget_coordinator() -> None:
+        """Drop this coordinator from hass.data.
+
+        Guarded by identity: a torn down setup attempt must not remove a
+        coordinator that a later attempt has stored in its place.
+        """
+        entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id)
+
+        if entry_data is None:
+            return
+
+        if entry_data.get(DATA_COORDINATOR) is coordinator:
+            entry_data.pop(DATA_COORDINATOR, None)
+
+        if not entry_data:
+            hass.data[DOMAIN].pop(entry.entry_id, None)
+
+    # Registered before the first refresh, because Home Assistant runs the
+    # entry's on_unload callbacks when setup returns False, raises, or ends in
+    # ConfigEntryNotReady. Without them a failed attempt leaves its bluetooth
+    # connection and its offline retry timer running, and they pile up on
+    # every retry. Callbacks run in reverse registration order, so the
+    # coordinator is unloaded before its entry data is dropped.
+    entry.async_on_unload(forget_coordinator)
+    entry.async_on_unload(coordinator.async_unload)
+
+    hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = coordinator
+
+    # A failed first poll raises ConfigEntryNotReady, which makes Home
+    # Assistant retry the whole setup with its own backoff. The teardown above
+    # has already closed the connection and cancelled the pending retry timer
+    # by then, so nothing is left running between attempts.
+    await coordinator.async_config_entry_first_refresh()
+
+    # Options are written to the entry by the options flow; apply them to the
+    # coordinator that is running rather than waiting for a restart.
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     logger.debug("Creating entities")
     # Setup platforms
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    try:
+        await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    except Exception:  # pylint: disable=broad-except
+        # Home Assistant leaves the platforms it already forwarded loaded when
+        # setup fails, so unload them here. A failure while unloading is logged
+        # separately and must not hide the error that ended setup.
+        logger.exception("Setting up the Bluetti platforms failed")
+
+        try:
+            await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+        except Exception as unload_err:  # pylint: disable=broad-except
+            logger.warning(
+                "Error unloading platforms after a setup failure: %s", unload_err
+            )
+
+        raise
 
     logger.debug("Setup done")
 
     return True
+
+
+async def _async_update_listener(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Apply changed entry options to the running coordinator."""
+
+    entry_data = hass.data.get(DOMAIN, {}).get(entry.entry_id, {})
+    coordinator = entry_data.get(DATA_COORDINATOR)
+
+    if not isinstance(coordinator, PollingCoordinator):
+        return
+
+    config = entry_config(entry)
+
+    if config is None:
+        coordinator.logger.warning(
+            "Options for '%s' were ignored: the entry data could not be parsed",
+            entry.title,
+        )
+        return
+
+    await coordinator.apply_options(config)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
