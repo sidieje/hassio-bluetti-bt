@@ -13,10 +13,10 @@
     "step": {
       "init": {
         "data": {
-          "polling_interval": "Intervalo de consulta em segundos (reinicialização necessária)",
-          "polling_timeout": "Tempo limite de consulta em segundos (reinicialização necessária)",
-          "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)",
-          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = desligado, reinicialização necessária)",
+          "polling_interval": "Intervalo de consulta em segundos",
+          "polling_timeout": "Tempo limite de consulta em segundos",
+          "max_retries": "Quantidade máxima de tentativas de conexão",
+          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = desligado)",
           "use_encryption": "Criptografia bluetooth detectada (recarrega o dispositivo)"
         },
         "data_description": {

@@ -1,13 +1,13 @@
 """Bluetti BT switches."""
 
 from __future__ import annotations
-import asyncio
 import logging
 import async_timeout
 from homeassistant.components.select import SelectEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.const import EntityCategory
+from homeassistant.exceptions import HomeAssistantError, ServiceValidationError
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
@@ -166,8 +166,19 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
         self.current_option = response_data.name
         self.async_write_ha_state()
 
-    async def async_select_option(self, option: str):
+    async def async_select_option(self, option: str) -> None:
         """Set the entity to value."""
+        if option not in self._attr_options:
+            raise ServiceValidationError(
+                f"{option} is not a valid option for {self._response_key}",
+                translation_domain=DOMAIN,
+                translation_key="invalid_option",
+                translation_placeholders={
+                    "field": self._response_key,
+                    "option": option,
+                },
+            )
+
         self._logger.debug(
             "Set %s on %s to %s",
             self._response_key,
@@ -176,38 +187,87 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
         )
         await self.write_to_device(option)
 
-    async def write_to_device(self, state: str):
-        """Write to device."""
+    async def write_to_device(self, option: str) -> None:
+        """Write the option and confirm it against what the device reports.
 
-        for attempt in range(1, 4):
-            try:
-                async with async_timeout.timeout(60):
-                    written = await self.coordinator.async_write(
-                        self._field.name, state
-                    )
+        The library is given the option name, which is what its command
+        builder turns into the register value. The read-back comes back as the
+        Enum member, so the comparison is made here against the member this
+        option names; the write only counts as done when the device agrees.
+        """
+        expected = self._field.e[option]
 
-                if not written:
-                    raise ConnectionError("Device rejected write")
-
-                # Wait until the device has changed value, otherwise reading
-                # the register might reset it
-                await asyncio.sleep(3)
-                await self.coordinator.async_request_refresh()
-
-                response_data = (self.coordinator.data or {}).get(self._response_key)
-                if getattr(response_data, "name", response_data) != state:
-                    raise ConnectionError("Device did not confirm the change")
-
-                return
-
-            except (TimeoutError, ConnectionError) as err:
-                self._logger.warning(
-                    "Write attempt %d/3 failed for %s: %s",
-                    attempt,
-                    mac_loggable(self._address),
-                    err,
+        try:
+            async with async_timeout.timeout(60):
+                result = await self.coordinator.async_write_verified(
+                    self._field.name, option
                 )
-                if attempt < 3:
-                    await asyncio.sleep(1)
+        except (TimeoutError, ConnectionError) as err:
+            self._logger.error(
+                "Write operation failed for %s: %s", self._response_key, err
+            )
+            raise HomeAssistantError(
+                f"Bluetti could not reach the device to change {self._response_key}",
+                translation_domain=DOMAIN,
+                translation_key="select_write_unreachable",
+                translation_placeholders={"field": self._response_key},
+            ) from err
 
-        self._logger.error("Unable to write %s after 3 attempts", self._response_key)
+        if result is None or not result.write_succeeded:
+            self._logger.error(
+                "Write of %s=%s was rejected; the device did not change",
+                self._response_key,
+                option,
+            )
+            raise HomeAssistantError(
+                f"The Bluetti device did not accept {option} for {self._response_key}",
+                translation_domain=DOMAIN,
+                translation_key="select_write_rejected",
+                translation_placeholders={
+                    "field": self._response_key,
+                    "option": option,
+                },
+            )
+
+        if not result.readback_succeeded:
+            self._logger.warning(
+                "Write of %s=%s was accepted, but the device would not read back",
+                self._response_key,
+                option,
+            )
+            raise HomeAssistantError(
+                f"The Bluetti device did not confirm {self._response_key}; "
+                "the value may only show up on the next poll",
+                translation_domain=DOMAIN,
+                translation_key="select_write_unconfirmed",
+                translation_placeholders={"field": self._response_key},
+            )
+
+        reported = (result.values or {}).get(self._response_key)
+
+        if reported != expected:
+            reported_label = getattr(reported, "name", reported)
+            self._logger.warning(
+                "Write value mismatch for %s: requested %s; device reports %s",
+                self._response_key,
+                option,
+                reported_label,
+            )
+            raise HomeAssistantError(
+                f"The Bluetti device reports {self._response_key}={reported_label}, "
+                f"not {option}",
+                translation_domain=DOMAIN,
+                translation_key="select_write_mismatch",
+                translation_placeholders={
+                    "field": self._response_key,
+                    "option": option,
+                    "reported": reported_label,
+                },
+            )
+
+        # The coordinator merged the read-back into its data, which is what
+        # leaves the entity showing the value the device actually holds.
+        self._logger.debug(
+            "Write verified for %s: %s", self._response_key, option
+        )
+

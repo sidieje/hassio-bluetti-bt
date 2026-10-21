@@ -9,6 +9,7 @@ from typing import Any
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
 from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from bluetti_bt_lib import (
@@ -45,6 +46,7 @@ class PollingCoordinator(DataUpdateCoordinator):
         hass: HomeAssistant,
         config: FullDeviceConfig,
         lock: asyncio.Lock,
+        config_entry: ConfigEntry,
     ):
         """Initialize coordinator."""
         super().__init__(
@@ -52,6 +54,7 @@ class PollingCoordinator(DataUpdateCoordinator):
             logging.getLogger(
                 f"{__name__}.{mac_loggable(config.address).replace(':', '_')}"
             ),
+            config_entry=config_entry,
             name="Bluetti polling coordinator",
             update_interval=timedelta(seconds=config.polling_interval),
         )
@@ -389,6 +392,53 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         async with self.connection_lock:
             await self._async_drop_connection("Unloading config entry")
+
+    async def apply_options(self, config: FullDeviceConfig) -> None:
+        """Adopt changed entry options without restarting the entry."""
+
+        previous = self.config
+        self.config = config
+
+        # The next run is scheduled from this value at the end of every
+        # refresh, so the new cadence takes effect from the refresh below.
+        self.update_interval = timedelta(seconds=config.polling_interval)
+
+        pack_interval = config.pack_poll_interval * 60
+
+        if pack_interval != self._pack_interval:
+            self._pack_interval = pack_interval
+            # Turning pack polling on should walk on the next cycle rather than
+            # wait out an interval inherited from when it was off. The walk
+            # re-arms the deadline itself, so this cannot schedule two walks.
+            self._pack_due_at = 0.0
+
+        # The reader is built from this config when a connection opens, so a
+        # changed timeout or retry count only reaches the device through a new
+        # connection. connection_lock is the lock the polling and write paths
+        # take, so nothing can be mid-flight when it is dropped.
+        if (
+            previous.polling_timeout != config.polling_timeout
+            or previous.max_retries != config.max_retries
+        ):
+            async with self.connection_lock:
+                await self._async_drop_connection("Polling options changed")
+
+        self.logger.debug(
+            "Polling options updated for %s: interval %ss, timeout %ss, "
+            "retries %s, pack interval %s",
+            mac_loggable(config.address),
+            config.polling_interval,
+            config.polling_timeout,
+            config.max_retries,
+            config.pack_poll_interval,
+        )
+
+        if self._unloading:
+            return
+
+        # Poll now, so the changed settings are in use immediately rather than
+        # after the previous interval has run out.
+        await self.async_request_refresh()
 
     def _packs_due(self) -> bool:
         """Whether this cycle should walk the battery pack slots."""
