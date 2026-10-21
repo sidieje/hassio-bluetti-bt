@@ -34,7 +34,7 @@
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/sidieje/hassio-bluetti-bt/issues",
     "requirements": [
-        "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ab1717fc81607b023f2d84e8ffd75b8c888ab5ce"
+        "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@b1b3b75ce98615091483e55014b468e8523f9cb5"
     ],
-    "version": "v1.0.7-beta.10"
+    "version": "v1.0.7"
 }
