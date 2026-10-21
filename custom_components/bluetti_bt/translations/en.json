@@ -18,12 +18,12 @@
           "polling_interval": "Polling interval in seconds (restart required)",
           "polling_timeout": "Polling timeout in seconds (restart required)",
           "max_retries": "Maximum amount of connection retries (restart required)",
-          "pack_poll_interval": "Battery pack polling interval in minutes (0 = no pack polling, restart required)",
-          "use_encryption": "Encrypted bluetooth communication (reloads the device)"
+          "pack_poll_interval": "Battery pack polling interval in minutes (0 = off, restart required)",
+          "use_encryption": "Detected bluetooth encryption (reloads the device)"
         },
         "data_description": {
-          "pack_poll_interval": "Each walk writes to a slot and waits for it to answer, which costs several seconds per pack. Leave it at 0 unless you want the per pack sensors.",
-          "use_encryption": "Detected when the device was added. Change it only if you think that detection was wrong."
+          "pack_poll_interval": "Reading the individual packs is slow: about 3 seconds per pack, so one cycle every interval takes roughly 10s instead of 2s on a 3-pack AC300. Leave it at 0 unless you want the per pack sensors.",
+          "use_encryption": "Detected when the device was added, not a security setting. Only change it if this device has never reported any data since being added."
         }
       }
     },
