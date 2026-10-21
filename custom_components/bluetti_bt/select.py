@@ -191,12 +191,11 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
         """Write the option and confirm it against what the device reports.
 
         The library is given the option name, which is what its command
-        builder turns into the register value. The read-back comes back as the
-        Enum member, so the comparison is made here against the member this
-        option names; the write only counts as done when the device agrees.
+        builder turns into the register value, and it compares the read-back
+        Enum member against the option that name refers to. Its verdict is
+        therefore the same comparison this entity would make, so the entity
+        trusts it; the write only counts as done when the device agrees.
         """
-        expected = self._field.e[option]
-
         try:
             async with async_timeout.timeout(60):
                 result = await self.coordinator.async_write_verified(
@@ -243,9 +242,8 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
                 translation_placeholders={"field": self._response_key},
             )
 
-        reported = (result.values or {}).get(self._response_key)
-
-        if reported != expected:
+        if not result.verified:
+            reported = (result.values or {}).get(self._response_key)
             reported_label = getattr(reported, "name", reported)
             self._logger.warning(
                 "Write value mismatch for %s: requested %s; device reports %s",
