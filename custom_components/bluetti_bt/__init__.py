@@ -89,9 +89,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Registered before the first refresh, because Home Assistant runs the
     # entry's on_unload callbacks when setup returns False, raises, or ends in
     # ConfigEntryNotReady. Without them a failed attempt leaves its bluetooth
-    # connection and its offline retry task running, and they pile up on every
-    # retry. Callbacks run in reverse registration order, so the coordinator is
-    # unloaded before its entry data is dropped.
+    # connection and its offline retry timer running, and they pile up on
+    # every retry. Callbacks run in reverse registration order, so the
+    # coordinator is unloaded before its entry data is dropped.
     entry.async_on_unload(forget_coordinator)
     entry.async_on_unload(coordinator.async_unload)
 
@@ -99,8 +99,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     # A failed first poll raises ConfigEntryNotReady, which makes Home
     # Assistant retry the whole setup with its own backoff. The teardown above
-    # has already closed the connection and cancelled the retry task by then,
-    # so nothing is left running between attempts.
+    # has already closed the connection and cancelled the pending retry timer
+    # by then, so nothing is left running between attempts.
     await coordinator.async_config_entry_first_refresh()
 
     # Options are written to the entry by the options flow; apply them to the
