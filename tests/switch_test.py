@@ -5,6 +5,8 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 
+from homeassistant.exceptions import ServiceValidationError
+
 from custom_components.bluetti_bt.switch import BluettiSwitch
 
 
@@ -24,7 +26,7 @@ class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
         return switch
 
     async def test_readback_failure_does_not_retry(self):
-        """A failed read-back should warn and must not retry the write."""
+        """A failed read-back should warn, report the failure, not retry."""
         result = SimpleNamespace(
             write_succeeded=True,
             readback_succeeded=False,
@@ -33,7 +35,8 @@ class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
         )
         switch = self.make_switch(result)
 
-        await switch.write_to_device(True)
+        with self.assertRaises(ServiceValidationError):
+            await switch.write_to_device(True)
 
         switch.coordinator.async_write_verified.assert_awaited_once_with(
             "ctrl_system_on_off", True
@@ -45,7 +48,7 @@ class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
         switch._logger.error.assert_not_called()
 
     async def test_state_mismatch_does_not_retry(self):
-        """A mismatched device state should warn and must not retry."""
+        """A mismatched device state should warn and report the device value."""
         result = SimpleNamespace(
             write_succeeded=True,
             readback_succeeded=True,
@@ -54,7 +57,8 @@ class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
         )
         switch = self.make_switch(result)
 
-        await switch.write_to_device(True)
+        with self.assertRaises(ServiceValidationError) as raised:
+            await switch.write_to_device(True)
 
         switch.coordinator.async_write_verified.assert_awaited_once_with(
             "ctrl_system_on_off", True
@@ -65,7 +69,42 @@ class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
             True,
             False,
         )
-        switch._logger.error.assert_not_called()
+        self.assertIn("ctrl_system_on_off=False, not True", str(raised.exception))
+
+    async def test_rejected_write_is_reported(self):
+        """A write the device refused should be visible in the UI."""
+        result = SimpleNamespace(
+            write_succeeded=False,
+            readback_succeeded=False,
+            verified=False,
+            values=None,
+        )
+        switch = self.make_switch(result)
+
+        with self.assertRaises(ServiceValidationError):
+            await switch.write_to_device(False)
+
+        switch._logger.error.assert_called_once_with(
+            "Write failed for %s; device state was not confirmed",
+            "ctrl_system_on_off",
+        )
+
+    async def test_lost_connection_is_reported(self):
+        """A write that never reached the device should be visible in the UI."""
+        switch = self.make_switch(None)
+        switch.coordinator.async_write_verified = AsyncMock(
+            side_effect=ConnectionError("no response")
+        )
+
+        with self.assertRaises(ServiceValidationError) as raised:
+            await switch.write_to_device(True)
+
+        self.assertIsInstance(raised.exception.__cause__, ConnectionError)
+        switch._logger.error.assert_called_once_with(
+            "Write operation failed for %s: %s",
+            "ctrl_system_on_off",
+            raised.exception.__cause__,
+        )
 
 
 if __name__ == "__main__":

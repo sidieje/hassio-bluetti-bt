@@ -17,14 +17,21 @@
         "data": {
           "polling_interval": "Datenabruf-Intervall in Sekunden (Neustart erforderlich)",
           "polling_timeout": "Datenabruf-Timeout in Sekunden (Neustart erforderlich)",
-          "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)"
+          "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)",
+          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = aus, Neustart erforderlich)",
+          "use_encryption": "Erkannte Bluetooth-Verschlüsselung (Gerät wird neu geladen)"
+        },
+        "data_description": {
+          "pack_poll_interval": "Das Auslesen der einzelnen Packs ist langsam: etwa 3 Sekunden pro Pack. Ein Zyklus pro Intervall dauert bei einem AC300 mit drei Packs rund 10 s statt 2 s. Lassen Sie den Wert auf 0, wenn Sie die Sensoren je Pack nicht benötigen.",
+          "use_encryption": "Beim Hinzufügen des Geräts erkannt, keine Sicherheitseinstellung. Ändern Sie dies nur, wenn das Gerät seit dem Hinzufügen nie Daten geliefert hat."
         }
       }
     },
     "abort": {
       "invalid_interval": "Ungültiger Datenabruf-Intervall. Verwende 5 Sekunden oder mehr",
       "invalid_timeout": "Ungültiger Datenabruf-Timeout. Verwende 1 Sekunde oder mehr",
-      "invalid_retries": "Ungültige maximale Verbindungsversuche. Verwende 1 oder mehr"
+      "invalid_retries": "Ungültige maximale Verbindungsversuche. Verwende 1 oder mehr",
+      "invalid_pack_interval": "Ungültiger Pack-Intervall. Verwende 0 Minuten oder mehr"
     }
   },
   "entity": {
@@ -308,8 +315,8 @@
       "pack_battery_soc": {
         "name": "Batteriepack {pack_num} Ladestand"
       },
-      "pack_cell_voltages": {
-        "name": "Batteriepack {pack_num} Spannung Zelle {cell_num}"
+      "pack_num": {
+        "name": "Anzahl Batteriepacks"
       }
     },
     "switch": {
@@ -374,6 +381,12 @@
       }
     },
     "number": {
+      "ctrl_eco_min_power_ac": {
+        "name": "Eco Minimum Power AC"
+      },
+      "ctrl_eco_min_power_dc": {
+        "name": "Eco Minimum Power DC"
+      },
       "soc_range_end": {
         "name": "UPS SOC hoch"
       },

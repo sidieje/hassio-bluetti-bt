@@ -12,13 +12,12 @@ DIAGNOSTICS = [
     FieldName.VER_ARM,
     FieldName.VER_DSP,
     FieldName.VER_BMS,
-    FieldName.PACK_CELL_VOLTAGES,
+    # How many packs the station reports as installed, which says something
+    # about the hardware fitment rather than what the user controls.
+    FieldName.PACK_NUM,
     # Split phase wiring is a one-off install setting, not an everyday control.
     FieldName.CTRL_SPLIT_PHASE,
     FieldName.CTRL_SPLIT_PHASE_MODE,
-    # Read-only eco thresholds; the eco toggles themselves live in Controls.
-    FieldName.CTRL_ECO_MIN_POWER_AC,
-    FieldName.CTRL_ECO_MIN_POWER_DC,
 ]
 
 # Settings that tune how a station behaves. Kept field-keyed so every device
@@ -28,6 +27,8 @@ CONFIGS = [
     FieldName.BATTERY_SOC_RANGE_START,
     FieldName.CTRL_CHARGING_MODE,
     FieldName.CTRL_DISPLAY_TIMEOUT,
+    FieldName.CTRL_ECO_MIN_POWER_AC,
+    FieldName.CTRL_ECO_MIN_POWER_DC,
     FieldName.CTRL_ECO_TIME_MODE,
     FieldName.CTRL_ECO_TIME_MODE_AC,
     FieldName.CTRL_ECO_TIME_MODE_DC,
@@ -37,7 +38,7 @@ CONFIGS = [
 ]
 
 
-def get_category(field: FieldName) -> EntityCategory | None:
+def get_category(field: FieldName, writable: bool = True) -> EntityCategory | None:
     """Category used to group an entity on the Home Assistant device page.
 
     Home Assistant puts uncategorized switch/number/select entities in the
@@ -45,9 +46,13 @@ def get_category(field: FieldName) -> EntityCategory | None:
     CTRL_ECO_AC, CTRL_ECO_DC, CTRL_POWER_LIFTING) deliberately have no
     category here; everything that tunes how a device behaves is CONFIG and
     lands in the "Configuration" section.
+
+    A setting that this particular model cannot write (the eco thresholds are
+    writable on the EL100 V2 but read-only on most other stations) is only
+    informative there, so it is filed under Diagnostic instead.
     """
     if field in DIAGNOSTICS:
         return EntityCategory.DIAGNOSTIC
     if field in CONFIGS:
-        return EntityCategory.CONFIG
+        return EntityCategory.CONFIG if writable else EntityCategory.DIAGNOSTIC
     return None

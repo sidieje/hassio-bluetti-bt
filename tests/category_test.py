@@ -81,10 +81,28 @@ class TestDevicePageGrouping(unittest.TestCase):
         ):
             self.assertEqual(get_category(name), None, f"{name} belongs in Controls")
 
-    def test_eco_thresholds_are_diagnostic(self):
-        """The eco thresholds are read-only, so they are not settings."""
-        for name in (FieldName.CTRL_ECO_MIN_POWER_AC, FieldName.CTRL_ECO_MIN_POWER_DC):
-            self.assertEqual(get_category(name), EntityCategory.DIAGNOSTIC, f"{name}")
+    def test_eco_thresholds_follow_writability(self):
+        """Where the model lets the owner set the eco thresholds they are
+        settings; on the models that only report them they are support detail."""
+        for name in (
+            FieldName.CTRL_ECO_MIN_POWER_AC,
+            FieldName.CTRL_ECO_MIN_POWER_DC,
+        ):
+            self.assertEqual(
+                get_category(name, writable=True),
+                EntityCategory.CONFIG,
+                f"{name} belongs in the Configuration section",
+            )
+            self.assertEqual(
+                get_category(name, writable=False),
+                EntityCategory.DIAGNOSTIC,
+                f"{name} is read-only on this model",
+            )
+
+    def test_pack_count_is_diagnostic(self):
+        """The pack count register describes the installed hardware, so it is
+        support detail rather than something the user tunes."""
+        self.assertEqual(get_category(FieldName.PACK_NUM), EntityCategory.DIAGNOSTIC)
 
     def test_eco_timer_selects_stay_in_configuration(self):
         for name in (
@@ -92,6 +110,27 @@ class TestDevicePageGrouping(unittest.TestCase):
             FieldName.CTRL_ECO_TIME_MODE_DC,
         ):
             self.assertEqual(get_category(name), EntityCategory.CONFIG, f"{name}")
+
+    def test_eco_threshold_placement_follows_the_model(self):
+        """The platforms ask whether the model can write the field, so the same
+        register is a setting on one station and support detail on another."""
+        for model, expected in (
+            ("EL100V2", EntityCategory.CONFIG),
+            ("EL10", EntityCategory.CONFIG),
+            ("EL300", EntityCategory.DIAGNOSTIC),
+        ):
+            device = build_device(f"{model}12345678")
+            with self.subTest(model=model):
+                for field in device.fields:
+                    if "eco_min_power" not in field.name:
+                        continue
+                    self.assertEqual(
+                        get_category(
+                            FieldName(field.name), writable=field.is_writeable()
+                        ),
+                        expected,
+                        f"{model} {field.name}",
+                    )
 
 
 if __name__ == "__main__":

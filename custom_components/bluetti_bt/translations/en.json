@@ -17,14 +17,21 @@
         "data": {
           "polling_interval": "Polling interval in seconds (restart required)",
           "polling_timeout": "Polling timeout in seconds (restart required)",
-          "max_retries": "Maximum amount of connection retries (restart required)"
+          "max_retries": "Maximum amount of connection retries (restart required)",
+          "pack_poll_interval": "Battery pack polling interval in minutes (0 = off, restart required)",
+          "use_encryption": "Detected bluetooth encryption (reloads the device)"
+        },
+        "data_description": {
+          "pack_poll_interval": "Reading the individual packs is slow: about 3 seconds per pack, so one cycle every interval takes roughly 10s instead of 2s on a 3-pack AC300. Leave it at 0 unless you want the per pack sensors.",
+          "use_encryption": "Detected when the device was added, not a security setting. Only change it if this device has never reported any data since being added."
         }
       }
     },
     "abort": {
       "invalid_interval": "Invalid polling interval. Use 5 seconds or more",
       "invalid_timeout": "Invalid polling timeout. Use 1 second or more",
-      "invalid_retries": "Invalid max retries. Use 1 or more"
+      "invalid_retries": "Invalid max retries. Use 1 or more",
+      "invalid_pack_interval": "Invalid pack polling interval. Use 0 minutes or more"
     }
   },
   "entity": {
@@ -308,8 +315,8 @@
       "pack_battery_soc": {
         "name": "Battery Pack {pack_num} SOC"
       },
-      "pack_cell_voltages": {
-        "name": "Battery Pack {pack_num} Voltage Cell {cell_num}"
+      "pack_num": {
+        "name": "Battery Pack Count"
       }
     },
     "switch": {
@@ -374,6 +381,12 @@
       }
     },
     "number": {
+      "ctrl_eco_min_power_ac": {
+        "name": "Eco Minimum Power AC"
+      },
+      "ctrl_eco_min_power_dc": {
+        "name": "Eco Minimum Power DC"
+      },
       "soc_range_end": {
         "name": "UPS SOC high"
       },

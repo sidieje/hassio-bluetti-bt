@@ -15,14 +15,21 @@
         "data": {
           "polling_interval": "Intervalo de consulta em segundos (reinicialização necessária)",
           "polling_timeout": "Tempo limite de consulta em segundos (reinicialização necessária)",
-          "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)"
+          "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)",
+          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = desligado, reinicialização necessária)",
+          "use_encryption": "Criptografia bluetooth detectada (recarrega o dispositivo)"
+        },
+        "data_description": {
+          "pack_poll_interval": "Ler os packs individualmente é lento: cerca de 3 segundos por pack, então um ciclo a cada intervalo leva cerca de 10s em vez de 2s em um AC300 com 3 packs. Deixe em 0 se não quiser os sensores por pack.",
+          "use_encryption": "Detectado ao adicionar o dispositivo, não é uma configuração de segurança. Altere apenas se este dispositivo nunca reportou dados desde que foi adicionado."
         }
       }
     },
     "abort": {
       "invalid_interval": "Intervalo de consulta inválido. Use 5 segundos ou mais",
       "invalid_timeout": "Tempo limite de consulta inválido. Use 1 segundo ou mais",
-      "invalid_retries": "Número máximo de tentativas inválido. Use 1 ou mais"
+      "invalid_retries": "Número máximo de tentativas inválido. Use 1 ou mais",
+      "invalid_pack_interval": "Intervalo dos packs inválido. Use 0 minutos ou mais"
     }
   },
   "entity": {
@@ -67,6 +74,7 @@
 
       "device_type": { "name": "Tipo de dispositivo" },
       "device_sn": { "name": "Número de série" },
+      "pack_num": { "name": "Quantidade de packs de bateria" },
 
       "grid_frequency": { "name": "Frequência da rede" },
       "grid_p1_current": { "name": "Corrente da rede Fase 1" },
