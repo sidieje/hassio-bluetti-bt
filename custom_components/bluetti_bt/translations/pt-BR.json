@@ -15,14 +15,16 @@
         "data": {
           "polling_interval": "Intervalo de consulta em segundos (reinicialização necessária)",
           "polling_timeout": "Tempo limite de consulta em segundos (reinicialização necessária)",
-          "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)"
+          "max_retries": "Quantidade máxima de tentativas de conexão (reinicialização necessária)",
+          "pack_poll_interval": "Intervalo de consulta dos packs de bateria em minutos (0 = a cada consulta, reinicialização necessária)"
         }
       }
     },
     "abort": {
       "invalid_interval": "Intervalo de consulta inválido. Use 5 segundos ou mais",
       "invalid_timeout": "Tempo limite de consulta inválido. Use 1 segundo ou mais",
-      "invalid_retries": "Número máximo de tentativas inválido. Use 1 ou mais"
+      "invalid_retries": "Número máximo de tentativas inválido. Use 1 ou mais",
+      "invalid_pack_interval": "Intervalo dos packs inválido. Use 0 minutos ou mais"
     }
   },
   "entity": {

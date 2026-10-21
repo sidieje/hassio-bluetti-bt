@@ -17,14 +17,16 @@
         "data": {
           "polling_interval": "Datenabruf-Intervall in Sekunden (Neustart erforderlich)",
           "polling_timeout": "Datenabruf-Timeout in Sekunden (Neustart erforderlich)",
-          "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)"
+          "max_retries": "Maximale Verbindungsversuche (Neustart erforderlich)",
+          "pack_poll_interval": "Datenabruf-Intervall der Batteriepacks in Minuten (0 = jeder Durchlauf, Neustart erforderlich)"
         }
       }
     },
     "abort": {
       "invalid_interval": "Ungültiger Datenabruf-Intervall. Verwende 5 Sekunden oder mehr",
       "invalid_timeout": "Ungültiger Datenabruf-Timeout. Verwende 1 Sekunde oder mehr",
-      "invalid_retries": "Ungültige maximale Verbindungsversuche. Verwende 1 oder mehr"
+      "invalid_retries": "Ungültige maximale Verbindungsversuche. Verwende 1 oder mehr",
+      "invalid_pack_interval": "Ungültiger Pack-Intervall. Verwende 0 Minuten oder mehr"
     }
   },
   "entity": {

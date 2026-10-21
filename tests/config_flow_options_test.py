@@ -14,6 +14,7 @@ OPTIONS = {
     "polling_interval": 20,
     "polling_timeout": 45,
     "max_retries": 5,
+    "pack_poll_interval": 2,
 }
 
 

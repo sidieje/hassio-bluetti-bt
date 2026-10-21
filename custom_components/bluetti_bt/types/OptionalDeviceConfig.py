@@ -4,10 +4,14 @@ import voluptuous as vol
 CONF_POLLING_INTERVAL = "polling_interval"
 CONF_POLLING_TIMEOUT = "polling_timeout"
 CONF_MAX_RETRIES = "max_retries"
+CONF_PACK_POLL_INTERVAL = "pack_poll_interval"
 
 ABORT_REASON_INTERVAL = "invalid_interval"
 ABORT_REASON_TIMEOUT = "invalid_timeout"
 ABORT_REASON_RETRIES = "invalid_retries"
+ABORT_REASON_PACK_INTERVAL = "invalid_pack_interval"
+
+DEFAULT_PACK_POLL_INTERVAL = 2
 
 
 class OptionalDeviceConfig:
@@ -16,10 +20,12 @@ class OptionalDeviceConfig:
         polling_interval: int,
         polling_timeout: int,
         max_retries: int,
+        pack_poll_interval: int = DEFAULT_PACK_POLL_INTERVAL,
     ):
         self.polling_interval = polling_interval
         self.polling_timeout = polling_timeout
         self.max_retries = max_retries
+        self.pack_poll_interval = pack_poll_interval
 
     @staticmethod
     def from_dict(raw: Dict[str, Any]):
@@ -27,6 +33,7 @@ class OptionalDeviceConfig:
             raw.get(CONF_POLLING_INTERVAL, 20),
             raw.get(CONF_POLLING_TIMEOUT, 45),
             raw.get(CONF_MAX_RETRIES, 5),
+            raw.get(CONF_PACK_POLL_INTERVAL, DEFAULT_PACK_POLL_INTERVAL),
         )
 
     def validate(self) -> str | None:
@@ -36,6 +43,8 @@ class OptionalDeviceConfig:
             return ABORT_REASON_TIMEOUT
         if self.max_retries < 1:
             return ABORT_REASON_RETRIES
+        if self.pack_poll_interval < 0:
+            return ABORT_REASON_PACK_INTERVAL
         return None
 
     @property
@@ -44,6 +53,7 @@ class OptionalDeviceConfig:
             CONF_POLLING_INTERVAL: self.polling_interval,
             CONF_POLLING_TIMEOUT: self.polling_timeout,
             CONF_MAX_RETRIES: self.max_retries,
+            CONF_PACK_POLL_INTERVAL: self.pack_poll_interval,
         }
 
     @property
@@ -61,6 +71,10 @@ class OptionalDeviceConfig:
                 vol.Required(
                     CONF_MAX_RETRIES,
                     default=self.max_retries,
+                ): int,
+                vol.Required(
+                    CONF_PACK_POLL_INTERVAL,
+                    default=self.pack_poll_interval,
                 ): int,
             }
         )

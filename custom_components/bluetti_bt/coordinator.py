@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 from datetime import timedelta
 import logging
+from time import monotonic
 from typing import Any
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakError
@@ -16,6 +17,7 @@ from bluetti_bt_lib import (
     DeviceReader,
     DeviceReaderConfig,
     DeviceWriter,
+    FieldName,
 )
 from bluetti_bt_lib.bluetooth import DeviceWriterConfig
 
@@ -68,9 +70,23 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._retry_task: asyncio.Task[None] | None = None
         self._unloading = False
 
+        # Walking the battery pack slots costs a selector write and a settle
+        # wait per slot, which is most of a poll cycle on a tower station.
+        # Most cycles read the station only and reuse the pack values from the
+        # last walk; the walk runs again when the interval expires.
+        self._pack_interval = config.pack_poll_interval * 60
+        self._pack_due_at = 0.0
+        self._pack_values: dict[str, Any] = {}
+        self._pack_num: int | None = None
+        self._pack_prefixes: tuple[str, ...] = ()
+
         if self.bluetti_device is None:
             self.logger.error("Device is unknown type: %s", config.name)
             return
+
+        self._pack_prefixes = tuple(
+            f"pack_{slot}_" for slot in range(1, self.bluetti_device.max_packs + 1)
+        )
 
     def _on_disconnected(self, _: BleakClient) -> None:
         """Mark the connection as stale so it gets rebuilt on next use."""
@@ -158,6 +174,10 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         self.reader = reader
         self.writer = None
+
+        # A fresh connection walks the slots on its first cycle, so the pack
+        # entities and the slot watcher start from what the device reports now.
+        self._pack_due_at = 0.0
 
         if self._offline:
             self.logger.info(
@@ -362,6 +382,36 @@ class PollingCoordinator(DataUpdateCoordinator):
         async with self.connection_lock:
             await self._async_drop_connection("Unloading config entry")
 
+    def _packs_due(self) -> bool:
+        """Whether this cycle should walk the battery pack slots."""
+        if self._pack_interval <= 0:
+            return True
+
+        return monotonic() >= self._pack_due_at
+
+    def _note_packs(self, data: dict[str, Any], walked: bool) -> None:
+        """Track what the cycle said about the battery packs.
+
+        A walk replaces the cached pack values and starts the next interval.
+        The pack count is a station register read every cycle, so a change is
+        noticed even when the slots were not walked, and the next cycle walks.
+        """
+        if walked:
+            self._pack_values = {
+                key: value
+                for key, value in data.items()
+                if key == FieldName.PACK_SLOTS.value
+                or key.startswith(self._pack_prefixes)
+            }
+            self._pack_due_at = monotonic() + self._pack_interval
+
+        pack_num = data.get(FieldName.PACK_NUM.value)
+
+        if self._pack_num is not None and pack_num != self._pack_num:
+            self._pack_due_at = 0.0
+
+        self._pack_num = pack_num
+
     async def _async_update_data(self):
         """Fetch data from API endpoint.
 
@@ -383,4 +433,16 @@ class PollingCoordinator(DataUpdateCoordinator):
             self.last_update_success = False
             return None
 
-        return await self.reader.read()
+        include_packs = self._packs_due()
+        data = await self.reader.read(include_packs=include_packs)
+
+        if data is None:
+            return None
+
+        if include_packs:
+            self._note_packs(data, walked=True)
+        else:
+            data.update(self._pack_values)
+            self._note_packs(data, walked=False)
+
+        return data

@@ -18,6 +18,7 @@
           "polling_interval": "Polling interval in seconds (restart required)",
           "polling_timeout": "Polling timeout in seconds (restart required)",
           "max_retries": "Maximum amount of connection retries (restart required)",
+          "pack_poll_interval": "Battery pack polling interval in minutes (0 = every poll, restart required)",
           "use_encryption": "Encrypted bluetooth communication (reloads the device)"
         }
       }
@@ -25,7 +26,8 @@
     "abort": {
       "invalid_interval": "Invalid polling interval. Use 5 seconds or more",
       "invalid_timeout": "Invalid polling timeout. Use 1 second or more",
-      "invalid_retries": "Invalid max retries. Use 1 or more"
+      "invalid_retries": "Invalid max retries. Use 1 or more",
+      "invalid_pack_interval": "Invalid pack polling interval. Use 0 minutes or more"
     }
   },
   "entity": {

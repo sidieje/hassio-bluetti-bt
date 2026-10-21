@@ -12,35 +12,47 @@ from custom_components.bluetti_bt.coordinator import (
 )
 
 
+def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
+    """Create a coordinator instance without initializing Home Assistant."""
+    coordinator = object.__new__(PollingCoordinator)
+    coordinator.logger = Mock(spec=logging.Logger)
+    coordinator.hass = SimpleNamespace(async_create_task=asyncio.create_task)
+    coordinator.config = SimpleNamespace(
+        address="AA:BB:CC:DD:EE:FF",
+        name="AC300",
+        polling_interval=20,
+        polling_timeout=45,
+        max_retries=5,
+        use_encryption=False,
+        pack_poll_interval=pack_poll_interval,
+    )
+    coordinator.bluetti_device = SimpleNamespace(max_packs=4)
+    coordinator.client = None
+    coordinator.reader = None
+    coordinator.writer = None
+    coordinator.disconnected = False
+    coordinator.connection_lock = asyncio.Lock()
+    coordinator.lock = asyncio.Lock()
+    coordinator._offline = False
+    coordinator._retry_attempt = False
+    coordinator._retry_task = None
+    coordinator._unloading = False
+    coordinator._pack_interval = pack_poll_interval * 60
+    coordinator._pack_due_at = 0.0
+    coordinator._pack_values = {}
+    coordinator._pack_num = None
+    coordinator._pack_prefixes = tuple(
+        f"pack_{slot}_" for slot in range(1, coordinator.bluetti_device.max_packs + 1)
+    )
+    coordinator.async_request_refresh = AsyncMock()
+    return coordinator
+
+
 class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
     """Test offline retry scheduling and state transitions."""
 
     def make_coordinator(self):
-        """Create a coordinator instance without initializing Home Assistant."""
-        coordinator = object.__new__(PollingCoordinator)
-        coordinator.logger = Mock(spec=logging.Logger)
-        coordinator.hass = SimpleNamespace(async_create_task=asyncio.create_task)
-        coordinator.config = SimpleNamespace(
-            address="AA:BB:CC:DD:EE:FF",
-            name="AC300",
-            polling_interval=20,
-            polling_timeout=45,
-            max_retries=5,
-            use_encryption=False,
-        )
-        coordinator.bluetti_device = object()
-        coordinator.client = None
-        coordinator.reader = None
-        coordinator.writer = None
-        coordinator.disconnected = False
-        coordinator.connection_lock = asyncio.Lock()
-        coordinator.lock = asyncio.Lock()
-        coordinator._offline = False
-        coordinator._retry_attempt = False
-        coordinator._retry_task = None
-        coordinator._unloading = False
-        coordinator.async_request_refresh = AsyncMock()
-        return coordinator
+        return make_coordinator()
 
     async def test_retry_delays_are_20_30_60_and_repeat_60(self):
         """Retry sleeps should follow the configured backoff sequence."""
@@ -371,6 +383,94 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
     async def test_verified_write_blocks_concurrent_reconnect(self):
         """async_write_verified must hold the lock across write+read-back."""
         await self.run_write_blocks_reconnect("async_write_verified")
+
+
+class TestPackPolling(unittest.IsolatedAsyncioTestCase):
+    """Test how often the battery pack slots are walked."""
+
+    STATION = {"pack_num": 2, "battery_soc": 55}
+
+    def make_coordinator(self, pack_poll_interval: int, cycles: list[dict]):
+        """A coordinator whose reader answers each cycle from the list."""
+        coordinator = make_coordinator(pack_poll_interval)
+        coordinator._async_get_client = AsyncMock(return_value=Mock())
+        coordinator.reader = Mock(read=AsyncMock(side_effect=cycles))
+        return coordinator
+
+    async def walked(self, coordinator) -> bool:
+        """Whether the last cycle asked the reader to walk the slots."""
+        return coordinator.reader.read.await_args.kwargs["include_packs"]
+
+    async def test_first_cycle_walks_the_slots(self):
+        """A fresh connection reports what the device has in it now."""
+        walk = {**self.STATION, "pack_slots": [2, 3], "pack_2_voltage": 51.7}
+        coordinator = self.make_coordinator(2, [walk])
+
+        data = await coordinator._async_update_data()
+
+        self.assertTrue(await self.walked(coordinator))
+        self.assertEqual(data["pack_slots"], [2, 3])
+
+    async def test_later_cycles_reuse_the_pack_values(self):
+        """Skipping the walk still reports the packs from the last walk."""
+        walk = {
+            **self.STATION,
+            "pack_slots": [2, 3],
+            "pack_2_voltage": 51.7,
+            "pack_3_voltage": 51.6,
+        }
+        coordinator = self.make_coordinator(2, [walk, dict(self.STATION)])
+
+        await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
+
+        self.assertFalse(await self.walked(coordinator))
+        self.assertEqual(data["battery_soc"], 55)
+        self.assertEqual(data["pack_slots"], [2, 3])
+        self.assertEqual(data["pack_2_voltage"], 51.7)
+        self.assertNotIn("pack_4_voltage", data)
+
+    async def test_zero_interval_walks_every_cycle(self):
+        """An interval of zero keeps the old behaviour."""
+        coordinator = self.make_coordinator(0, [dict(self.STATION)] * 2)
+
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+
+        self.assertTrue(await self.walked(coordinator))
+
+    async def test_pack_count_change_walks_the_next_cycle(self):
+        """The pack count is a station register, so a swap is noticed early."""
+        walk = {**self.STATION, "pack_slots": [2, 3], "pack_2_voltage": 51.7}
+        coordinator = self.make_coordinator(
+            2,
+            [walk, {**self.STATION, "pack_num": 3}, walk],
+        )
+
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+
+        self.assertTrue(await self.walked(coordinator))
+
+    async def test_a_walk_replaces_values_from_the_previous_walk(self):
+        """A pack that was removed does not linger in the reused values."""
+        first = {**self.STATION, "pack_slots": [2], "pack_2_voltage": 51.7}
+        second = {**self.STATION, "pack_slots": [4], "pack_4_voltage": 51.9}
+        coordinator = self.make_coordinator(2, [first, dict(self.STATION), second, dict(self.STATION)])
+
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+
+        # The interval has not expired, so the test opens the next walk.
+        coordinator._pack_due_at = 0.0
+
+        await coordinator._async_update_data()
+        data = await coordinator._async_update_data()
+
+        self.assertEqual(data["pack_slots"], [4])
+        self.assertEqual(data["pack_4_voltage"], 51.9)
+        self.assertNotIn("pack_2_voltage", data)
 
 
 if __name__ == "__main__":
