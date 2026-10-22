@@ -25,11 +25,11 @@ Support for encrypted models is experimental, although it has been tested agains
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
 | **Apex 300**, **EL100 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
-| **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers; eco minimum power is read only), charging mode, power lifting, display timeout, battery SOC range |
-| **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers; eco minimum power is read only), charging mode, power lifting, display timeout, battery SOC range |
+| **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
 
-The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2 and EL100 mini, and 5-10 W / 15-30 W on the EL10. On the EL30 V2, EL200 V2 and EL300 the value is reported, but no owner has confirmed their app lets it be set, so it stays a read-only sensor under Diagnostic.
+The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2, EL100 mini, EL30 V2, EL200 V2 and EL300, and 5-10 W / 15-30 W on the EL10.
 
 Every settings slider moves in single units, and the battery SOC range is limited to 5-100% like the app. The stop threshold still has to be above the start threshold, so the integration rejects a pair the app would refuse.
 
