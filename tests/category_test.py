@@ -118,7 +118,7 @@ class TestDevicePageGrouping(unittest.TestCase):
             ("EL100V2", EntityCategory.CONFIG),
             ("EL10", EntityCategory.CONFIG),
             ("EL30V2", EntityCategory.CONFIG),
-            ("EL200V2", EntityCategory.CONFIG),
+            ("Elite 200 V2", EntityCategory.CONFIG),
             ("EL300", EntityCategory.CONFIG),
             ("AC180", EntityCategory.DIAGNOSTIC),
             ("AC70", EntityCategory.DIAGNOSTIC),
