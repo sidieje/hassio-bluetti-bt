@@ -13,6 +13,8 @@ This fork adds working controls for Elite Series devices that require encrypted 
 
 The **EL200 V2** is now recognised by the name it actually reports, `Elite 200 V2`, and that name is in the bluetooth matcher list, so the station appears under Discovered instead of being missed by every entry in the previous list.
 
+The **Apex 300** no longer offers the grid charge switch: its register reads zero and ignores writes, so the switch could never show or change the station's real state.
+
 The **Charger 2** uses a different control protocol, with system power and silent charging sharing a multipurpose register that requires read-modify-write handling.
 
 Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. The **AC180P** answers a few more registers than its profile claimed, so it now reports DC input voltage and current, AC output voltage and frequency, and its charge range. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
@@ -26,7 +28,8 @@ Support for encrypted models is experimental, although it has been tested agains
 | Device | Controls |
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
-| **Apex 300**, **EL100 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **Apex 300** | UPS mode, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **EL100 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
