@@ -48,7 +48,7 @@ def get_category(field: FieldName, writable: bool = True) -> EntityCategory | No
     lands in the "Configuration" section.
 
     A setting that this particular model cannot write (the eco thresholds are
-    writable on the EL100 V2 but read-only on most other stations) is only
+    writable on the EL portables but read-only on the AC70 and AC180) is only
     informative there, so it is filed under Diagnostic instead.
     """
     if field in DIAGNOSTICS:

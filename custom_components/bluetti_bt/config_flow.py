@@ -38,9 +38,11 @@ KNOWN_DEVICE_TYPES: dict[str, bool] = {
     "EL10": True,
     "EL100mini": True,
     "EL100V2": True,
-    "EL200V2": True,
     "EL300": True,
     "EL30V2": True,
+    # The Elite 200 V2 is keyed the way it reports itself, spaces included,
+    # because that is the string in its type register and in its advertisement.
+    "Elite 200 V2": True,
 }
 
 

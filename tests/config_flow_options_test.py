@@ -177,7 +177,7 @@ class TestHasBatteryPacks(unittest.TestCase):
             "CHARGER2",
             "EL10",
             "EL100V2",
-            "EL200V2",
+            "Elite 200 V2",
             "EL300",
             "AP300",
             "EP600",

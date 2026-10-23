@@ -1,6 +1,7 @@
 """Tests for identifying a device from the name it advertises."""
 
 import asyncio
+import re
 import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
@@ -26,7 +27,7 @@ class TestIdentifyFromBtName(unittest.TestCase):
             ("EL102543110143137", "EL10", True),
             ("EL100V22539111584127", "EL100V2", True),
             ("EL100mini1234567890123", "EL100mini", True),
-            ("EL200V21234567890123", "EL200V2", True),
+            ("Elite 200 V22512002239825", "Elite 200 V2", True),
             ("EL30V21234567890123", "EL30V2", True),
             ("EL3001234567890123", "EL300", True),
             ("CHARGER2123456789012", "CHARGER2", True),
@@ -52,6 +53,22 @@ class TestIdentifyFromBtName(unittest.TestCase):
 
         # The entry name is built from this, so it has to be buildable
         self.assertEqual(type(build_device(identified[1])).__name__, "CHARGER2")
+
+    def test_elite_200_v2_name_survives_the_entry_name(self):
+        """The Elite 200 V2 is the one model whose name keeps a space.
+
+        The entry stores only the capitals and digits of what was advertised,
+        which leaves the E200V2 spelling the library aliases back to the model.
+        """
+        identified = identify_from_bt_name("Elite 200 V22512002239825")
+
+        self.assertIsNotNone(identified)
+        self.assertEqual(identified[0], "Elite 200 V2")
+        self.assertTrue(identified[2])
+
+        entry_name = re.sub("[^A-Z0-9]+", "", identified[1])
+        self.assertEqual(entry_name, "E200V22512002239825")
+        self.assertEqual(type(build_device(entry_name)).__name__, "EL200V2")
 
     def test_every_known_type_is_buildable(self):
         """The shortcut only lists types the library can actually build."""

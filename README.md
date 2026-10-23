@@ -11,11 +11,13 @@ This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/h
 
 This fork adds working controls for Elite Series devices that require encrypted Bluetooth communication. These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which maintains persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
 
+The **EL200 V2** is now recognised by the name it actually reports, `Elite 200 V2`, and that name is in the bluetooth matcher list, so the station appears under Discovered instead of being missed by every entry in the previous list.
+
 The **Charger 2** uses a different control protocol, with system power and silent charging sharing a multipurpose register that requires read-modify-write handling.
 
-Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
+Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. The **AC180P** answers a few more registers than its profile claimed, so it now reports DC input voltage and current, AC output voltage and frequency, and its charge range. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
 
-The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. A read that a station skips is asked for once more before the cycle is given up on, and the AC300's switches wait a little longer before that read-back, because its older bluetooth stack is slow to reflect a write. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
 
 Support for encrypted models is experimental, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
 
@@ -25,11 +27,11 @@ Support for encrypted models is experimental, although it has been tested agains
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
 | **Apex 300**, **EL100 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
-| **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers; eco minimum power is read only), charging mode, power lifting, display timeout, battery SOC range |
-| **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers; eco minimum power is read only), charging mode, power lifting, display timeout, battery SOC range |
+| **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
 
-The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2 and EL100 mini, and 5-10 W / 15-30 W on the EL10. On the EL30 V2, EL200 V2 and EL300 the value is reported, but no owner has confirmed their app lets it be set, so it stays a read-only sensor under Diagnostic.
+The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2, EL100 mini, EL30 V2, EL200 V2 and EL300, and 5-10 W / 15-30 W on the EL10.
 
 Every settings slider moves in single units, and the battery SOC range is limited to 5-100% like the app. The stop threshold still has to be above the start threshold, so the integration rejects a pair the app would refuse.
 

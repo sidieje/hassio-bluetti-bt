@@ -117,7 +117,11 @@ class TestDevicePageGrouping(unittest.TestCase):
         for model, expected in (
             ("EL100V2", EntityCategory.CONFIG),
             ("EL10", EntityCategory.CONFIG),
-            ("EL300", EntityCategory.DIAGNOSTIC),
+            ("EL30V2", EntityCategory.CONFIG),
+            ("Elite 200 V2", EntityCategory.CONFIG),
+            ("EL300", EntityCategory.CONFIG),
+            ("AC180", EntityCategory.DIAGNOSTIC),
+            ("AC70", EntityCategory.DIAGNOSTIC),
         ):
             device = build_device(f"{model}12345678")
             with self.subTest(model=model):
