@@ -15,7 +15,7 @@ The **Charger 2** uses a different control protocol, with system power and silen
 
 Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
 
-The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. A read that a station skips is asked for once more before the cycle is given up on, and the AC300's switches wait a little longer before that read-back, because its older bluetooth stack is slow to reflect a write. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
 
 Support for encrypted models is experimental, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
 
