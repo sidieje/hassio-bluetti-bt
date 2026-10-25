@@ -405,6 +405,72 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
             }
         )
 
+    async def test_unverified_write_readback_is_not_merged(self):
+        """An unverified read-back must not overwrite the cached data."""
+        coordinator = self.make_coordinator()
+        coordinator.data = {"ctrl_system_on_off": False}
+        coordinator.async_set_updated_data = Mock()
+
+        result = SimpleNamespace(
+            write_succeeded=True,
+            readback_succeeded=True,
+            verified=False,
+            values={
+                "ctrl_system_on_off": False,
+                "ctrl_silent_charging": False,
+            },
+        )
+        writer = SimpleNamespace(
+            write_verified=AsyncMock(return_value=result)
+        )
+
+        with patch.object(
+            coordinator,
+            "_async_get_writer",
+            new=AsyncMock(return_value=writer),
+        ):
+            returned = await coordinator.async_write_verified(
+                "ctrl_system_on_off", True
+            )
+
+        self.assertIs(returned, result)
+        writer.write_verified.assert_awaited_once_with(
+            "ctrl_system_on_off", True
+        )
+        coordinator.async_set_updated_data.assert_not_called()
+        self.assertEqual(
+            {"ctrl_system_on_off": False},
+            coordinator.data,
+        )
+
+    async def test_unverified_write_without_readback_is_not_merged(self):
+        """A write whose read-back failed has no values to merge."""
+        coordinator = self.make_coordinator()
+        coordinator.data = {"ctrl_system_on_off": False}
+        coordinator.async_set_updated_data = Mock()
+
+        result = SimpleNamespace(
+            write_succeeded=True,
+            readback_succeeded=False,
+            verified=False,
+            values=None,
+        )
+        writer = SimpleNamespace(
+            write_verified=AsyncMock(return_value=result)
+        )
+
+        with patch.object(
+            coordinator,
+            "_async_get_writer",
+            new=AsyncMock(return_value=writer),
+        ):
+            returned = await coordinator.async_write_verified(
+                "ctrl_system_on_off", True
+            )
+
+        self.assertIs(returned, result)
+        coordinator.async_set_updated_data.assert_not_called()
+
     async def test_verified_write_without_writer_returns_none(self):
         """A verified write without a connection returns None."""
         coordinator = self.make_coordinator()

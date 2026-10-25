@@ -391,6 +391,9 @@ class PollingCoordinator(DataUpdateCoordinator):
         The write and its verification read-back are one lifecycle
         operation: connection_lock is held across both so a reconnect
         cannot interrupt between the write and the read-back.
+
+        Only a verified read-back is merged into the cached data; see the
+        comment below for why an unverified one is dropped.
         """
         async with self.connection_lock:
             writer = await self._async_get_writer()
@@ -415,7 +418,18 @@ class PollingCoordinator(DataUpdateCoordinator):
 
             result = await writer.write_verified(field, value)
 
-        if result.values is not None and isinstance(self.data, dict):
+        # A write that did not verify only means the read-back disagreed: the
+        # station can hand back the pre-write value because its BLE copy of
+        # the register refreshes some time after the write. Merging that stale
+        # read-back would push the old value to the entities and the UI would
+        # flip back even though the device changed. Leave the cached data
+        # alone instead, so the entities keep their last known value and the
+        # next poll replaces it with what the device actually holds.
+        if (
+            result.verified
+            and result.values is not None
+            and isinstance(self.data, dict)
+        ):
             updated_data = {**self.data, **result.values}
             self.async_set_updated_data(updated_data)
 
