@@ -33,6 +33,7 @@ CONFIGS = [
     FieldName.CTRL_ECO_TIME_MODE_AC,
     FieldName.CTRL_ECO_TIME_MODE_DC,
     FieldName.CTRL_GRID_CHARGE_ON,
+    FieldName.CTRL_GRID_STABILIZING,
     FieldName.CTRL_TIME_CONTROL_ON,
     FieldName.CTRL_UPS_MODE,
 ]

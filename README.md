@@ -15,6 +15,8 @@ The **Charger 2** uses a different control protocol, with system power and silen
 
 Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
 
+The library also added the **AC50P** and the **FridgePower**. The FridgePower advertises only its two letter type code `FP` followed by the serial number, so the integration now matches `FP*` advertisements. Its grid input power and current are signed registers, and the library reports them as the power flowing into the unit. Its UPS mode uses the same register and values as the EL100 V2 rather than the older Elite spelling, and its charge and eco thresholds stay read only because the ranges the app accepts on that model are not recorded yet.
+
 The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. A read that a station skips is asked for once more before the cycle is given up on, and every control is verified against a re-read window rather than a single delayed read: the first read-back lands one second after the write, then every half second until three and a half seconds have passed. A station that is slow to reflect a change, like the AC300, is caught by a later read instead of a single unlucky one, and the entity updates as soon as a read-back confirms the write. If nothing in the window confirms it, the switch keeps its last known state instead of snapping back to the value the station had not updated yet, and the next poll corrects it. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
 
 Support for encrypted models is experimental, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
@@ -29,6 +31,8 @@ Support for encrypted models is experimental, although it has been tested agains
 | **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
+| **AC50P** | AC output, DC output, power lifting |
+| **FridgePower** | UPS mode, AC output, DC output, AC and DC eco mode (with eco timers), charging mode, power lifting, time of use, grid self-adaption |
 
 The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2, EL100 mini, EL30 V2, EL200 V2 and EL300, and 5-10 W / 15-30 W on the EL10.
 

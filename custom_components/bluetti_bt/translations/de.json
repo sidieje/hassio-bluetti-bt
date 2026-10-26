@@ -353,6 +353,9 @@
       "ctrl_grid_charge_on": {
         "name": "UPS Laden aus dem Netz"
       },
+      "ctrl_grid_stabilizing": {
+        "name": "Netz-Selbstanpassung"
+      },
       "ctrl_time_control_on": {
         "name": "UPS Zeitsteuerung"
       }
@@ -418,6 +421,9 @@
       },
       "ctrl_grid_charge_on": {
         "name": "UPS Laden aus dem Netz"
+      },
+      "ctrl_grid_stabilizing": {
+        "name": "Netz-Selbstanpassung"
       },
       "ctrl_power_lifting": {
         "name": "Power Lifting"

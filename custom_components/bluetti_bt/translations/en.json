@@ -358,6 +358,9 @@
       "ctrl_grid_charge_on": {
         "name": "UPS Charge from Grid"
       },
+      "ctrl_grid_stabilizing": {
+        "name": "Grid Self-Adaption"
+      },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
       },
@@ -435,6 +438,9 @@
       },
       "ctrl_grid_charge_on": {
         "name": "UPS Charge from Grid"
+      },
+      "ctrl_grid_stabilizing": {
+        "name": "Grid Self-Adaption"
       },
       "ctrl_power_lifting": {
         "name": "Power Lifting"
