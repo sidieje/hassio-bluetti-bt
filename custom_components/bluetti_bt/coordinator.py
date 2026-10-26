@@ -50,6 +50,12 @@ FIRST_REFRESH_MAX_ATTEMPTS = 2
 # the following cycles before its readings are used anyway.
 PACK_WALK_RETRIES = 2
 
+# A cycle that answered nothing is usually a station that was busy, and the
+# reader resyncs its own pipeline over the live connection to recover from
+# that. Only a second cycle in a row says the link itself is done for, and the
+# connection gets rebuilt from scratch instead.
+FAILED_READS_TO_RECONNECT = 2
+
 
 class PollingCoordinator(DataUpdateCoordinator):
     """Polling coordinator.
@@ -128,6 +134,7 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._pack_num: int | None = None
         self._pack_prefixes: tuple[str, ...] = ()
         self._pack_retries = 0
+        self._failed_reads = 0
 
         if self.bluetti_device is None:
             self.logger.error("Device is unknown type: %s", config.name)
@@ -230,6 +237,7 @@ class PollingCoordinator(DataUpdateCoordinator):
         # entities and the slot watcher start from what the device reports now.
         self._pack_due_at = 0.0
         self._pack_retries = 0
+        self._failed_reads = 0
 
         if self._offline:
             self.logger.info(
@@ -634,6 +642,34 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         self._pack_num = pack_num
 
+    def _note_failed_read(self) -> None:
+        """Note a cycle where the station answered nothing.
+
+        The library's reader logs why the read failed, but it leaves a
+        caller-supplied connection alone, so a link that is half-dead keeps the
+        same client and reports the same bleak error every cycle. Only the
+        second cycle in a row is treated as a dead link, because a station that
+        was simply busy resyncs its own pipeline over the live connection.
+        """
+        self._failed_reads += 1
+
+        if self._failed_reads < FAILED_READS_TO_RECONNECT:
+            self.logger.debug(
+                "No data from %s, leaving the connection to the reader",
+                mac_loggable(self.config.address),
+            )
+            return
+
+        self._failed_reads = 0
+        self.logger.debug(
+            "Connection to %s stopped answering, rebuilding it",
+            mac_loggable(self.config.address),
+        )
+        # The same flag bleak's disconnect callback sets: the next poll drops
+        # the client and rebuilds it, which puts the device through the normal
+        # offline handling if it really has gone.
+        self.disconnected = True
+
     async def _async_update_data(self):
         """Run one poll cycle, and note that the setup refresh has happened."""
         try:
@@ -666,8 +702,10 @@ class PollingCoordinator(DataUpdateCoordinator):
         data = await self.reader.read(include_packs=include_packs)
 
         if data is None:
+            self._note_failed_read()
             return None
 
+        self._failed_reads = 0
         if include_packs:
             if self._walk_complete(data) or self._pack_retries >= PACK_WALK_RETRIES:
                 self._pack_retries = 0
