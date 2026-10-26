@@ -60,6 +60,7 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator._pack_values = {}
     coordinator._pack_num = None
     coordinator._pack_retries = 0
+    coordinator._failed_reads = 0
     coordinator._pack_prefixes = tuple(
         f"pack_{slot}_" for slot in range(1, coordinator.bluetti_device.max_packs + 1)
     )
@@ -954,6 +955,52 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(data["pack_slots"], [2])
         self.assertNotIn("pack_3_voltage", data)
+
+
+class TestFailedReads(unittest.IsolatedAsyncioTestCase):
+    """Test what happens when a live connection stops answering."""
+
+    STATION = {"battery_soc": 55}
+
+    def make_coordinator(self, cycles: list[dict | None]):
+        """A coordinator whose reader answers each cycle from the list."""
+        coordinator = make_coordinator(0)
+        coordinator._async_get_client = AsyncMock(return_value=Mock())
+        coordinator.reader = Mock(read=AsyncMock(side_effect=cycles))
+        return coordinator
+
+    async def test_one_quiet_cycle_leaves_the_connection_alone(self):
+        """A busy station resyncs its own pipeline over the live link."""
+        coordinator = self.make_coordinator([None])
+
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertFalse(coordinator.disconnected)
+        self.assertEqual(1, coordinator._failed_reads)
+        # The reader already logged why the read failed.
+        coordinator.logger.warning.assert_not_called()
+
+    async def test_second_quiet_cycle_rebuilds_the_connection(self):
+        """A half-dead link is not left to report the same error forever."""
+        coordinator = self.make_coordinator([None, None])
+
+        await coordinator._async_update_data()
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertTrue(coordinator.disconnected)
+        self.assertEqual(0, coordinator._failed_reads)
+        coordinator.logger.warning.assert_not_called()
+
+    async def test_a_good_cycle_clears_the_count(self):
+        """An isolated miss does not count towards a rebuild."""
+        coordinator = self.make_coordinator([None, dict(self.STATION), None])
+
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertFalse(coordinator.disconnected)
+        self.assertEqual(1, coordinator._failed_reads)
 
 
 if __name__ == "__main__":
