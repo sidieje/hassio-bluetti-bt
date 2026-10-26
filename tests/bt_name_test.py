@@ -21,7 +21,14 @@ class TestBTNames(unittest.TestCase):
             if not isinstance(local_name, str):
                 continue
 
-            self.assertGreaterEqual(len(local_name.strip("*")), 3)
+            # A prefix shorter than three characters is only allowed when it is
+            # a whole device type, which is the case for the FridgePower: it
+            # advertises "FP" followed by its serial number and nothing else.
+            prefix = local_name.strip("*")
+            self.assertTrue(
+                len(prefix) >= 3 or prefix in DEVICES,
+                f"BT matcher prefix too short to be a device type: {local_name}",
+            )
 
     def test_device_names(self):
         matchers: List[str] = []

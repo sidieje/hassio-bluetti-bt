@@ -22,6 +22,7 @@
         { "local_name": "EP6*" },
         { "local_name": "EP7*" },
         { "local_name": "EP8*" },
+        { "local_name": "FP*" },
         { "local_name": "Handsfree*" },
         { "local_name": "PBOX*" },
         { "local_name": "PR1*" },
@@ -35,7 +36,7 @@
     "iot_class": "local_polling",
     "issue_tracker": "https://github.com/sidieje/hassio-bluetti-bt/issues",
     "requirements": [
-        "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@10f5461b2bae185a5cbbdfde754949e74d60875b"
+        "bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@464b0be33dc8fede734c35e4a33b6d4791d2865d"
     ],
-    "version": "v1.0.11"
+    "version": "v1.0.12-beta.1"
 }

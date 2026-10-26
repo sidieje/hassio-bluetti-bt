@@ -119,6 +119,7 @@
       "ctrl_dc": { "name": "Saída CC" },
       "ctrl_eco": { "name": "Modo ECO" },
       "ctrl_grid_charge_on": { "name": "UPS Carregamento da rede" },
+      "ctrl_grid_stabilizing": { "name": "Autoadaptação da rede" },
       "ctrl_led_mode": { "name": "Modo do LED" },
       "ctrl_power_lifting": { "name": "Power Lifting" },
       "ctrl_power_off": { "name": "Desligar" },
