@@ -5,24 +5,41 @@
 
 ### Bluetti Bluetooth integration with read and encrypted write support
 
-This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read support and write control for the encrypted devices **BLUETTI Charger 2**, **Apex 300**, **EL10**, **EL30 V2**, **EL100 V2**, **EL100 mini**, **EL200 V2** and **EL300**.
+This fork extends [Patrick762/hassio-bluetti-bt](https://github.com/Patrick762/hassio-bluetti-bt) with Bluetooth read support and write control for the encrypted devices **BLUETTI Charger 2**, **Apex 300**, **EL10**, **EL30 V2**, **EL100 V2**, **EL100 mini**, **EL200 V2**, **EL300** and **FridgePower**.
 
 #### Device support and encrypted communication
 
-This fork adds working controls for Elite Series devices that require encrypted Bluetooth communication. These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib), which maintains persistent BLE connections shared between reading and writing, reducing repeated connections and encryption handshakes.
+This fork adds working controls for Elite Series devices that require encrypted Bluetooth communication. These capabilities are implemented through the extended [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib). 
 
-The **Charger 2** uses a different control protocol, with system power and silent charging sharing a multipurpose register that requires read-modify-write handling.
+### Fork Highlights
 
-Unencrypted devices retain their existing controls, with additional controls added for the AC200M, AC300 and AC500. Per-pack SOC and voltage are available on those tower stations, but pack polling is off by default because walking the packs costs about three seconds per pack; enable it per device from its Configure dialog. Sensors for empty slots are registered as disabled to avoid cluttering the device page. The integration also corrects itself when a pack is added or moved.
+This fork focuses on improving connection reliability, polling efficiency, write verification and device support.
 
-The library also added the **AC50P** and the **FridgePower**. The FridgePower advertises only its two letter type code `FP` followed by the serial number, but Home Assistant rejects a `local_name` matcher with a wildcard in its first three characters, so the integration matches `FP0*` through `FP9*` instead of a single `FP*`; either way the library only accepts `FP` followed by digits. Its grid input power and current are signed registers, and the library reports them as the power flowing into the unit. Its UPS mode uses the same register and values as the EL100 V2 rather than the older Elite spelling, and its charge and eco thresholds stay read only because the ranges the app accepts on that model are not recorded yet.
+- **Persistent BLE connections:** Reading and writing share persistent connections, reducing repeated connections and encryption handshakes.
+- **Verified writes:** All controls are checked against the device's reported state, improving reliability and the accuracy of Home Assistant entity states.
+- **Write locking:** Prevents duplicate writes while verification is in progress.
+- **Optimised register polling:** Adjacent registers are read in blocks, reducing polling times and adapter load.
+- **Automatic device recognition:** Many known devices are recognised automatically, reducing the need for repeated discovery and encryption checks.
+- **Improved connection recovery:** Failed connections are cleaned up, notification subscriptions are retried, and connection locking prevents retries or integration unloads from interrupting active writes.
+- **More reliable state updates:** Controlled retry intervals, repeated read-back verification and quieter logging improve reliability, particularly during outages and when stations are slow to reflect changes.
 
-The library also improves connection recovery, cleans up failed connections, retries failed notification subscriptions and verifies writes by reading back the updated device state. A read that a station skips is asked for once more before the cycle is given up on, and every control is verified against a re-read window rather than a single delayed read: the first read-back lands one second after the write, then every half second until three and a half seconds have passed. A station that is slow to reflect a change, like the AC300, is caught by a later read instead of a single unlucky one, and the entity updates as soon as a read-back confirms the write. If nothing in the window confirms it, the switch keeps its last known state instead of snapping back to the value the station had not updated yet, and the next poll corrects it. Improved connection locking prevents retries or integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+The **Charger 2** uses a different control protocol. System power and silent charging share a multipurpose register, requiring read-modify-write handling to avoid overwriting unrelated settings.
 
-Support for encrypted models is experimental, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
+For **unencrypted devices**, existing controls are retained, with additional controls added for the AC200M, AC300 and AC500. These tower stations also expose per-pack state of charge (SOC) and voltage. Pack polling is disabled by default because polling each pack adds approximately three seconds per pack; it can be enabled per device through the Configure dialog. Sensors for empty pack slots are registered as disabled to avoid cluttering the device page. The integration also updates its configuration when a pack is added or moved.
 
-#### Write controls by device
+### Write verification and state handling
 
+Every control write is verified by reading back the device state over a verification window, rather than relying on a single delayed read. The first read-back occurs one second after the write, followed by additional reads every half-second until three and a half seconds have elapsed.
+
+This is particularly useful for stations such as the AC300, which can take longer to reflect a change. Later read-backs can confirm a write that an earlier read would miss, and the Home Assistant entity updates as soon as the change is confirmed.
+
+If the verification window expires without confirmation, the switch retains its last known state rather than reverting to a value the station has not yet updated. The next polling cycle can then reconcile the entity with the device's reported state. Reads skipped by a station are also retried once before the polling cycle is abandoned.
+
+Improved connection locking prevents retries and integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
+
+Support for encrypted models remains **experimental**, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
+
+### Write controls by device
 | Device | Controls |
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
@@ -31,7 +48,6 @@ Support for encrypted models is experimental, although it has been tested agains
 | **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
-| **AC50P** | AC output, DC output, power lifting |
 | **FridgePower** | UPS mode, AC output, DC output, AC and DC eco mode (with eco timers), charging mode, power lifting, time of use, grid self-adaption |
 
 The eco minimum power sliders use the ranges the Bluetti app offers on each model: 5-20 W on DC and 10-40 W on AC for the Apex 300, EL100 V2, EL100 mini, EL30 V2, EL200 V2 and EL300, and 5-10 W / 15-30 W on the EL10.
