@@ -11,6 +11,7 @@ from unittest.mock import AsyncMock, Mock, patch
 from bleak.exc import BleakError
 
 from custom_components.bluetti_bt.coordinator import (
+    FIRST_REFRESH_MAX_ATTEMPTS,
     OFFLINE_RETRY_DELAYS,
     STARTUP_GRACE_SECONDS,
     PollingCoordinator,
@@ -46,6 +47,9 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator._ever_connected = False
     # Past by default, so the startup grace is off unless a test asks for it.
     coordinator._startup_grace_until = 0.0
+    # Off by default: only the refresh Home Assistant waits for during entry
+    # setup connects with the reduced attempt count.
+    coordinator._setup_refresh = False
     coordinator._retry_attempt = False
     coordinator._retry_delay_index = 0
     coordinator._retry_unsub = None
@@ -734,6 +738,73 @@ class TestOfflineLogging(unittest.IsolatedAsyncioTestCase):
         self.assertIn("https://esphome.io/projects/?type=bluetooth", warning)
         self.assertIn("XX:XX:XX:XX:XX:FF", warning)
         self.assertNotIn("AA:BB:CC:DD:EE:FF", warning)
+
+
+class TestFirstRefreshConnection(unittest.IsolatedAsyncioTestCase):
+    """Test how hard the coordinator tries while the entry is being set up."""
+
+    async def refresh(self, coordinator: PollingCoordinator) -> AsyncMock:
+        """Run one refresh that connects and reads, and return bleak's mock."""
+        client = AsyncMock()
+        client.is_connected = True
+        reader = AsyncMock()
+        reader.read.return_value = {"pack_num": 2, "pack_slots": [2]}
+
+        with (
+            patch(
+                "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+                new=AsyncMock(return_value=SimpleNamespace(name="AC300")),
+            ),
+            patch(
+                "custom_components.bluetti_bt.coordinator.establish_connection",
+                new=AsyncMock(return_value=client),
+            ) as establish,
+            patch(
+                "custom_components.bluetti_bt.coordinator.DeviceReader",
+                return_value=reader,
+            ),
+        ):
+            await coordinator._async_update_data()
+
+        return establish
+
+    async def test_the_setup_refresh_connects_with_fewer_attempts(self):
+        """A tower that is unreachable at startup must not stall bootstrap."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 10
+        coordinator._setup_refresh = True
+
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(
+            FIRST_REFRESH_MAX_ATTEMPTS,
+            establish.await_args.kwargs["max_attempts"],
+        )
+        self.assertFalse(coordinator._setup_refresh)
+
+    async def test_later_polls_use_the_attempts_the_user_configured(self):
+        """Only the refresh Home Assistant waits behind is capped."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 10
+        coordinator._setup_refresh = True
+
+        await self.refresh(coordinator)
+
+        # The connection dropped, so the next cycle reconnects.
+        coordinator.disconnected = True
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(10, establish.await_args.kwargs["max_attempts"])
+
+    async def test_the_cap_never_raises_a_smaller_retry_count(self):
+        """A user who asked for fewer attempts still gets fewer."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 1
+        coordinator._setup_refresh = True
+
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(1, establish.await_args.kwargs["max_attempts"])
 
 
 class TestPackPolling(unittest.IsolatedAsyncioTestCase):

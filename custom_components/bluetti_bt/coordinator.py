@@ -38,6 +38,14 @@ OFFLINE_RETRY_DELAYS = (20, 30, 60)
 STARTUP_GRACE_SECONDS = 120
 STARTUP_GRACE_KEY = "startup_grace_until"
 
+# Home Assistant waits for a config entry to finish setting up, and bleak
+# spends about 20s per connection attempt plus its own backoffs, so the
+# configured attempt count can hold up bootstrap for minutes on a tower that
+# is unreachable at startup. Home Assistant retries a failed setup on its own
+# and the offline backoff covers a device that is really gone, so the refresh
+# that runs during setup does not need to try hard.
+FIRST_REFRESH_MAX_ATTEMPTS = 2
+
 # A pack walk that answers fewer packs than the station reports is retried on
 # the following cycles before its readings are used anyway.
 PACK_WALK_RETRIES = 2
@@ -92,6 +100,12 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._startup_grace_until = hass.data.setdefault(DOMAIN, {}).setdefault(
             STARTUP_GRACE_KEY, monotonic() + STARTUP_GRACE_SECONDS
         )
+        # The first refresh is the one Home Assistant waits for during entry
+        # setup, so it connects with fewer attempts. A failed first refresh
+        # tears this coordinator down and the setup retry builds a new one, so
+        # the flag is set again for every setup attempt and only needs to be
+        # cleared once a refresh has run.
+        self._setup_refresh = True
         self._retry_attempt = False
         # Offline retries are one-shot timers rather than a long-lived task:
         # Home Assistant's bootstrap waits for every task created during the
@@ -174,7 +188,7 @@ class PollingCoordinator(DataUpdateCoordinator):
                 device,
                 device.name or "Unknown Device",
                 disconnected_callback=self._on_disconnected,
-                max_attempts=self.config.max_retries,
+                max_attempts=self._connect_attempts(),
             )
         except (BleakError, OSError, TimeoutError) as err:
             self.client = None
@@ -233,6 +247,18 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         self.logger.debug("Connected to %s", mac_loggable(self.config.address))
         return self.client
+
+    def _connect_attempts(self) -> int:
+        """How many connection attempts bleak is allowed this time.
+
+        The refresh that runs while the entry is being set up is the one
+        Home Assistant's bootstrap waits behind, so it gets the reduced count;
+        every later poll uses what the user configured.
+        """
+        if self._setup_refresh:
+            return min(self.config.max_retries, FIRST_REFRESH_MAX_ATTEMPTS)
+
+        return self.config.max_retries
 
     def _in_startup_grace(self) -> bool:
         """Whether an offline report is still too early to warn about."""
@@ -609,6 +635,13 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._pack_num = pack_num
 
     async def _async_update_data(self):
+        """Run one poll cycle, and note that the setup refresh has happened."""
+        try:
+            return await self._async_poll()
+        finally:
+            self._setup_refresh = False
+
+    async def _async_poll(self):
         """Fetch data from API endpoint.
 
         This is the place to pre-process the data to lookup tables
