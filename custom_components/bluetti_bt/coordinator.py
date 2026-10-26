@@ -23,10 +23,20 @@ from bluetti_bt_lib import (
 )
 from bluetti_bt_lib.bluetooth import DeviceWriterConfig
 
+from .const import DOMAIN
 from .utils import mac_loggable
 from .types import FullDeviceConfig
 
 OFFLINE_RETRY_DELAYS = (20, 30, 60)
+
+# Adapters and remote proxies are still coming up while config entries load, so
+# the first connection attempts after a restart usually fail. The deadline is
+# kept per Home Assistant run rather than per coordinator because a failed
+# first refresh tears this coordinator down and the setup retry builds a new
+# one, which would otherwise reset the grace and leave a device that is really
+# gone unreported.
+STARTUP_GRACE_SECONDS = 120
+STARTUP_GRACE_KEY = "startup_grace_until"
 
 # A pack walk that answers fewer packs than the station reports is retried on
 # the following cycles before its readings are used anyway.
@@ -74,6 +84,14 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.writer: DeviceWriter | None = None
         self.disconnected = False
         self._offline = False
+        # Whether the current outage has been warned about yet. The startup
+        # grace defers the warning instead of dropping it, so the first attempt
+        # after the grace runs out still reports it.
+        self._offline_reported = False
+        self._ever_connected = False
+        self._startup_grace_until = hass.data.setdefault(DOMAIN, {}).setdefault(
+            STARTUP_GRACE_KEY, monotonic() + STARTUP_GRACE_SECONDS
+        )
         self._retry_attempt = False
         # Offline retries are one-shot timers rather than a long-lived task:
         # Home Assistant's bootstrap waits for every task created during the
@@ -145,7 +163,8 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         if device is None:
             self._mark_offline(
-                f"Device not found: {mac_loggable(self.config.address)}"
+                f"{mac_loggable(self.config.address)} is not advertising: it is "
+                "probably powered off, asleep or out of range. Polling will retry."
             )
             return None
 
@@ -161,7 +180,8 @@ class PollingCoordinator(DataUpdateCoordinator):
             self.client = None
             self._mark_offline(
                 f"Unable to connect to "
-                f"{mac_loggable(self.config.address)}: {err}"
+                f"{mac_loggable(self.config.address)}: {self._offline_reason(err)}",
+                detail=self._hide_address(err),
             )
             return None
 
@@ -203,6 +223,8 @@ class PollingCoordinator(DataUpdateCoordinator):
                 mac_loggable(self.config.address),
             )
         self._offline = False
+        self._offline_reported = False
+        self._ever_connected = True
 
         # Back online, so the next outage starts at the short end of the
         # backoff again and no retry is left waiting to fire.
@@ -212,12 +234,53 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.logger.debug("Connected to %s", mac_loggable(self.config.address))
         return self.client
 
-    def _mark_offline(self, message: str) -> None:
-        """Mark the device offline and ensure a retry timer is armed."""
-        if not self._offline:
-            self.logger.warning(message)
-        else:
+    def _in_startup_grace(self) -> bool:
+        """Whether an offline report is still too early to warn about."""
+        return not self._ever_connected and monotonic() < self._startup_grace_until
+
+    def _offline_reason(self, err: BaseException) -> str:
+        """What a failed connection most likely means, on one line.
+
+        bleak_retry_connector's own text is several lines of scanner and
+        adapter internals that only make sense with debug logging turned on, so
+        the warning carries the guess the user can act on and the detail goes to
+        DEBUG. Running out of connection slots is the exception: it names
+        something the user can actually fix, so its advice stays on the warning.
+        """
+        if "connection slot" in str(err):
+            return (
+                "the proxy or adapter is out of connection slots or the device "
+                "is no longer reachable; add additional proxies "
+                "(https://esphome.io/projects/?type=bluetooth) near this device. "
+                "Polling will retry."
+            )
+
+        return "it is probably powered off, asleep or out of range. Polling will retry."
+
+    def _hide_address(self, err: BaseException) -> str:
+        """bleak's text with this device's address masked out.
+
+        bleak_retry_connector quotes the full address back at us, and the
+        privacy helper applies to every line we log, debug included.
+        """
+        return str(err).replace(self.config.address, mac_loggable(self.config.address))
+
+    def _mark_offline(self, message: str, detail: str | None = None) -> None:
+        """Mark the device offline and ensure a retry timer is armed.
+
+        An outage is warned about once, whether the warning came from the first
+        failed attempt or from the first one after the startup grace ran out.
+        """
+        if self._offline_reported:
             self.logger.debug("Device remains offline: %s", message)
+        elif self._in_startup_grace():
+            self.logger.debug("Offline during startup grace: %s", message)
+        else:
+            self.logger.warning(message)
+            self._offline_reported = True
+
+        if detail is not None:
+            self.logger.debug("Connection failure detail: %s", detail)
 
         self._offline = True
 
