@@ -16,14 +16,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
 
-from bluetti_bt_lib import build_device, BluettiDevice, FieldName, get_unit
+from bluetti_bt_lib import BluettiDevice, FieldName, get_unit
 from bluetti_bt_lib.fields import NumberField
 
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
-from .utils import mac_loggable, unique_id_logable
+from .utils import build_bluetti_device, mac_loggable, unique_id_logable
 
 # Registers that only make sense in a given order relative to each other.
 # Maps field -> (counterpart field, direction the value must keep).
@@ -58,7 +58,7 @@ async def async_setup_entry(
     device_info = dev_info(entry)
 
     # Add numbers
-    bluetti_device = build_device(config.name)
+    bluetti_device = build_bluetti_device(config.dev_type, config.name)
 
     numbers_to_add = []
     for field in bluetti_device.fields:

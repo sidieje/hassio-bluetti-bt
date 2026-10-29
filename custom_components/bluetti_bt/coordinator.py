@@ -14,7 +14,6 @@ from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers.event import async_call_later
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
 from bluetti_bt_lib import (
-    build_device,
     BluettiDevice,
     DeviceReader,
     DeviceReaderConfig,
@@ -24,7 +23,7 @@ from bluetti_bt_lib import (
 from bluetti_bt_lib.bluetooth import DeviceWriterConfig
 
 from .const import DOMAIN
-from .utils import mac_loggable
+from .utils import build_bluetti_device, mac_loggable
 from .types import FullDeviceConfig
 
 OFFLINE_RETRY_DELAYS = (20, 30, 60)
@@ -91,7 +90,9 @@ class PollingCoordinator(DataUpdateCoordinator):
         self.connection_lock = asyncio.Lock()
 
         self.logger.info("Creating client for %s", config.name)
-        self.bluetti_device: BluettiDevice | None = build_device(config.name)
+        self.bluetti_device: BluettiDevice | None = build_bluetti_device(
+            config.dev_type, config.name
+        )
 
         self.client: BleakClient | None = None
         self.reader: DeviceReader | None = None

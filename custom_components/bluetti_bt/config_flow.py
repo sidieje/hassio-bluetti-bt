@@ -22,6 +22,7 @@ from .types import (
     OptionalDeviceConfig,
 )
 from .const import DOMAIN
+from .utils import device_class_for_type
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -83,7 +84,7 @@ def has_battery_packs(dev_type: Any) -> bool:
     form should not offer pack polling to a Charger 2 or an EL100 V2, where it
     could only ever do nothing.
     """
-    device_cls = DEVICES.get(dev_type) if isinstance(dev_type, str) else None
+    device_cls = device_class_for_type(dev_type)
 
     if device_cls is None:
         return False
