@@ -4,11 +4,16 @@ import asyncio
 import logging
 import unittest
 from datetime import UTC, datetime
+from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from bleak.exc import BleakError
+
 from custom_components.bluetti_bt.coordinator import (
+    FIRST_REFRESH_MAX_ATTEMPTS,
     OFFLINE_RETRY_DELAYS,
+    STARTUP_GRACE_SECONDS,
     PollingCoordinator,
 )
 
@@ -38,6 +43,13 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator.connection_lock = asyncio.Lock()
     coordinator.lock = asyncio.Lock()
     coordinator._offline = False
+    coordinator._offline_reported = False
+    coordinator._ever_connected = False
+    # Past by default, so the startup grace is off unless a test asks for it.
+    coordinator._startup_grace_until = 0.0
+    # Off by default: only the refresh Home Assistant waits for during entry
+    # setup connects with the reduced attempt count.
+    coordinator._setup_refresh = False
     coordinator._retry_attempt = False
     coordinator._retry_delay_index = 0
     coordinator._retry_unsub = None
@@ -48,6 +60,7 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator._pack_values = {}
     coordinator._pack_num = None
     coordinator._pack_retries = 0
+    coordinator._failed_reads = 0
     coordinator._pack_prefixes = tuple(
         f"pack_{slot}_" for slot in range(1, coordinator.bluetti_device.max_packs + 1)
     )
@@ -598,6 +611,203 @@ class TestOfflineRetry(unittest.IsolatedAsyncioTestCase):
         await self.run_write_blocks_reconnect("async_write_verified")
 
 
+class TestOfflineLogging(unittest.IsolatedAsyncioTestCase):
+    """Test how an offline device reaches the log."""
+
+    def patch_timer(self) -> RetryTimerRecorder:
+        """Record the offline retry timers instead of arming real ones."""
+        timers = RetryTimerRecorder()
+        self._timer_patch = patch(
+            "custom_components.bluetti_bt.coordinator.async_call_later", new=timers
+        )
+        self._timer_patch.start()
+        self.addCleanup(self._timer_patch.stop)
+        return timers
+
+    async def test_startup_grace_holds_the_warning_back(self):
+        """Failing before the adapters and proxies are up is expected."""
+        coordinator = make_coordinator()
+        coordinator._startup_grace_until = monotonic() + STARTUP_GRACE_SECONDS
+        timers = self.patch_timer()
+
+        coordinator._mark_offline("XX:XX:XX:XX:XX:FF is not advertising")
+
+        coordinator.logger.warning.assert_not_called()
+        self.assertEqual(1, coordinator.logger.debug.call_count)
+        self.assertIn("startup grace", coordinator.logger.debug.call_args.args[0])
+        # The backoff still runs during the grace, so the device is retried.
+        self.assertEqual([20], timers.delays())
+        self.assertTrue(coordinator._offline)
+
+    async def test_a_device_still_absent_after_the_grace_warns(self):
+        """The grace defers the warning, it does not drop it."""
+        coordinator = make_coordinator()
+        coordinator._startup_grace_until = monotonic() + STARTUP_GRACE_SECONDS
+        timers = self.patch_timer()
+
+        async def not_found() -> None:
+            coordinator._mark_offline("XX:XX:XX:XX:XX:FF is not advertising")
+
+        coordinator._async_get_client = not_found
+
+        coordinator._mark_offline("XX:XX:XX:XX:XX:FF is not advertising")
+
+        # The retry attempt lands once the grace has run out.
+        coordinator._startup_grace_until = monotonic() - 1
+        await timers.fire()
+
+        coordinator.logger.warning.assert_called_once_with(
+            "XX:XX:XX:XX:XX:FF is not advertising"
+        )
+        self.assertEqual([20, 30], timers.delays())
+
+    async def test_the_grace_ends_once_the_device_has_connected(self):
+        """A device that was up and then dropped is not a startup race."""
+        coordinator = make_coordinator()
+        coordinator._startup_grace_until = monotonic() + STARTUP_GRACE_SECONDS
+        coordinator._ever_connected = True
+        self.patch_timer()
+
+        coordinator._mark_offline("XX:XX:XX:XX:XX:FF stopped responding")
+
+        coordinator.logger.warning.assert_called_once_with(
+            "XX:XX:XX:XX:XX:FF stopped responding"
+        )
+
+    async def connect_failure(self, coordinator: PollingCoordinator, err: Exception):
+        """Run one connection attempt that fails with err."""
+        device = SimpleNamespace(name="Bluetti")
+
+        with (
+            patch(
+                "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+                new=AsyncMock(return_value=device),
+            ),
+            patch(
+                "custom_components.bluetti_bt.coordinator.establish_connection",
+                new=AsyncMock(side_effect=err),
+            ),
+        ):
+            self.assertIsNone(await coordinator._async_get_client())
+
+        return coordinator.logger.warning.call_args.args[0]
+
+    async def test_connection_failure_warns_in_plain_words(self):
+        """The warning says what an outage means, the bleak dump goes to debug."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakError(
+                "AC3002225000400310 - AA:BB:CC:DD:EE:FF: Failed to connect "
+                "after 7 attempt(s): TimeoutError"
+            ),
+        )
+
+        self.assertIn("XX:XX:XX:XX:XX:FF", warning)
+        self.assertIn("powered off, asleep or out of range", warning)
+        self.assertNotIn("AA:BB:CC:DD:EE:FF", warning)
+        self.assertNotIn("Failed to connect after", warning)
+
+        details = [
+            call.args[1]
+            for call in coordinator.logger.debug.call_args_list
+            if call.args[0] == "Connection failure detail: %s"
+        ]
+        self.assertEqual(1, len(details))
+        self.assertIn("Failed to connect after 7 attempt(s)", details[0])
+        self.assertNotIn("AA:BB:CC:DD:EE:FF", details[0])
+
+    async def test_out_of_slots_advice_stays_on_the_warning(self):
+        """The one failure the user can act on is not hidden behind debug."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakError(
+                "AP3002519000242488 - AA:BB:CC:DD:EE:FF: Failed to connect after "
+                "10 attempt(s): No backend with an available connection slot was "
+                "found: The proxy/adapter is out of connection slots or the "
+                "device is no longer reachable; Add additional proxies "
+                "(https://esphome.io/projects/?type=bluetooth) near this device"
+            ),
+        )
+
+        self.assertIn("out of connection slots", warning)
+        self.assertIn("https://esphome.io/projects/?type=bluetooth", warning)
+        self.assertIn("XX:XX:XX:XX:XX:FF", warning)
+        self.assertNotIn("AA:BB:CC:DD:EE:FF", warning)
+
+
+class TestFirstRefreshConnection(unittest.IsolatedAsyncioTestCase):
+    """Test how hard the coordinator tries while the entry is being set up."""
+
+    async def refresh(self, coordinator: PollingCoordinator) -> AsyncMock:
+        """Run one refresh that connects and reads, and return bleak's mock."""
+        client = AsyncMock()
+        client.is_connected = True
+        reader = AsyncMock()
+        reader.read.return_value = {"pack_num": 2, "pack_slots": [2]}
+
+        with (
+            patch(
+                "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+                new=AsyncMock(return_value=SimpleNamespace(name="AC300")),
+            ),
+            patch(
+                "custom_components.bluetti_bt.coordinator.establish_connection",
+                new=AsyncMock(return_value=client),
+            ) as establish,
+            patch(
+                "custom_components.bluetti_bt.coordinator.DeviceReader",
+                return_value=reader,
+            ),
+        ):
+            await coordinator._async_update_data()
+
+        return establish
+
+    async def test_the_setup_refresh_connects_with_fewer_attempts(self):
+        """A tower that is unreachable at startup must not stall bootstrap."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 10
+        coordinator._setup_refresh = True
+
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(
+            FIRST_REFRESH_MAX_ATTEMPTS,
+            establish.await_args.kwargs["max_attempts"],
+        )
+        self.assertFalse(coordinator._setup_refresh)
+
+    async def test_later_polls_use_the_attempts_the_user_configured(self):
+        """Only the refresh Home Assistant waits behind is capped."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 10
+        coordinator._setup_refresh = True
+
+        await self.refresh(coordinator)
+
+        # The connection dropped, so the next cycle reconnects.
+        coordinator.disconnected = True
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(10, establish.await_args.kwargs["max_attempts"])
+
+    async def test_the_cap_never_raises_a_smaller_retry_count(self):
+        """A user who asked for fewer attempts still gets fewer."""
+        coordinator = make_coordinator()
+        coordinator.config.max_retries = 1
+        coordinator._setup_refresh = True
+
+        establish = await self.refresh(coordinator)
+
+        self.assertEqual(1, establish.await_args.kwargs["max_attempts"])
+
+
 class TestPackPolling(unittest.IsolatedAsyncioTestCase):
     """Test how often the battery pack slots are walked."""
 
@@ -745,6 +955,52 @@ class TestPackPolling(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(data["pack_slots"], [2])
         self.assertNotIn("pack_3_voltage", data)
+
+
+class TestFailedReads(unittest.IsolatedAsyncioTestCase):
+    """Test what happens when a live connection stops answering."""
+
+    STATION = {"battery_soc": 55}
+
+    def make_coordinator(self, cycles: list[dict | None]):
+        """A coordinator whose reader answers each cycle from the list."""
+        coordinator = make_coordinator(0)
+        coordinator._async_get_client = AsyncMock(return_value=Mock())
+        coordinator.reader = Mock(read=AsyncMock(side_effect=cycles))
+        return coordinator
+
+    async def test_one_quiet_cycle_leaves_the_connection_alone(self):
+        """A busy station resyncs its own pipeline over the live link."""
+        coordinator = self.make_coordinator([None])
+
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertFalse(coordinator.disconnected)
+        self.assertEqual(1, coordinator._failed_reads)
+        # The reader already logged why the read failed.
+        coordinator.logger.warning.assert_not_called()
+
+    async def test_second_quiet_cycle_rebuilds_the_connection(self):
+        """A half-dead link is not left to report the same error forever."""
+        coordinator = self.make_coordinator([None, None])
+
+        await coordinator._async_update_data()
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertTrue(coordinator.disconnected)
+        self.assertEqual(0, coordinator._failed_reads)
+        coordinator.logger.warning.assert_not_called()
+
+    async def test_a_good_cycle_clears_the_count(self):
+        """An isolated miss does not count towards a rebuild."""
+        coordinator = self.make_coordinator([None, dict(self.STATION), None])
+
+        await coordinator._async_update_data()
+        await coordinator._async_update_data()
+        self.assertIsNone(await coordinator._async_update_data())
+
+        self.assertFalse(coordinator.disconnected)
+        self.assertEqual(1, coordinator._failed_reads)
 
 
 if __name__ == "__main__":

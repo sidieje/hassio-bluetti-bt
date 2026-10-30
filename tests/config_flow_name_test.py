@@ -70,6 +70,21 @@ class TestIdentifyFromBtName(unittest.TestCase):
         self.assertEqual(entry_name, "E200V22512002239825")
         self.assertEqual(type(build_device(entry_name)).__name__, "EL200V2")
 
+    def test_handsfree_name_is_still_buildable(self):
+        """The shortcut skips Handsfree, but its stored name still builds.
+
+        A Handsfree keeps its space in the device table, so the entry name
+        closes it to H1<serial>. The library aliases that spelling from
+        v1.0.12-beta.4.
+        """
+        entry_name = re.sub("[^A-Z0-9]+", "", "Handsfree 112345678")
+        self.assertEqual(entry_name, "H112345678")
+
+        device = build_device(entry_name)
+
+        self.assertIsNotNone(device)
+        self.assertEqual(type(device).__name__, "Handsfree1")
+
     def test_every_known_type_is_buildable(self):
         """The shortcut only lists types the library can actually build."""
         for dev_type, use_encryption in KNOWN_DEVICE_TYPES.items():

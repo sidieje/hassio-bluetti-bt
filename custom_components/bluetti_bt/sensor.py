@@ -11,14 +11,14 @@ from homeassistant.const import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import CoordinatorEntity
-from bluetti_bt_lib import build_device, FieldName, get_unit
+from bluetti_bt_lib import FieldName, get_unit
 from bluetti_bt_lib.fields import NumberField
 
 from . import device_info as dev_info, get_unique_id, FullDeviceConfig
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
 from .pack_slots import apply_pack_visibility, occupied_slots, watch_pack_slots
-from .utils import mac_loggable, unique_id_logable
+from .utils import build_bluetti_device, mac_loggable, unique_id_logable
 from .types import get_device_class, get_state_class, get_category
 
 
@@ -43,7 +43,7 @@ async def async_setup_entry(
     device_info = dev_info(entry)
 
     # Add sensors
-    bluetti_device = build_device(config.name)
+    bluetti_device = build_bluetti_device(config.dev_type, config.name)
 
     sensors_to_add = []
     sensor_fields: list[tuple[object, bool]] = [

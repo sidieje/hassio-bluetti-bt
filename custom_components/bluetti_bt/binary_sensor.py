@@ -11,14 +11,14 @@ from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.update_coordinator import (
     CoordinatorEntity,
 )
-from bluetti_bt_lib import build_device, FieldName
+from bluetti_bt_lib import FieldName
 from bluetti_bt_lib.fields import SwitchField
 
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
 from .const import DATA_COORDINATOR, DOMAIN
 from .coordinator import PollingCoordinator
-from .utils import mac_loggable, unique_id_logable
+from .utils import build_bluetti_device, mac_loggable, unique_id_logable
 
 
 async def async_setup_entry(
@@ -41,7 +41,7 @@ async def async_setup_entry(
     device_info = dev_info(entry)
 
     # Add sensors
-    bluetti_device = build_device(config.name)
+    bluetti_device = build_bluetti_device(config.dev_type, config.name)
 
     sensors_to_add = []
     bool_fields = bluetti_device.get_bool_fields()
