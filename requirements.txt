@@ -1,2 +1,2 @@
 homeassistant
-bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@v1.0.12-beta.4
+bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@v1.0.12
