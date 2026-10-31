@@ -8,7 +8,15 @@ from time import monotonic
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
-from bleak.exc import BleakError
+from bleak.exc import (
+    BleakBluetoothNotAvailableError,
+    BleakBluetoothNotAvailableReason,
+    BleakError,
+)
+from bleak_retry_connector import (
+    BleakConnectionError,
+    BleakOutOfConnectionSlotsError,
+)
 
 from custom_components.bluetti_bt.coordinator import (
     FIRST_REFRESH_MAX_ATTEMPTS,
@@ -739,6 +747,88 @@ class TestOfflineLogging(unittest.IsolatedAsyncioTestCase):
         self.assertIn("https://esphome.io/projects/?type=bluetooth", warning)
         self.assertIn("XX:XX:XX:XX:XX:FF", warning)
         self.assertNotIn("AA:BB:CC:DD:EE:FF", warning)
+
+    async def test_a_device_no_backend_can_reach_stays_neutral(self):
+        """A station switched off at the wall looks exactly like this."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakOutOfConnectionSlotsError(
+                "AC300 - AA:BB:CC:DD:EE:FF: Failed to connect after 10 attempt(s): "
+                "AA:BB:CC:DD:EE:FF: No backend with an available connection slot "
+                "that can reach address AA:BB:CC:DD:EE:FF was found: "
+                "The proxy/adapter is out of connection slots or the device is no "
+                "longer reachable; Add additional proxies "
+                "(https://esphome.io/projects/?type=bluetooth) near this device"
+            ),
+        )
+
+        self.assertIn("powered off, asleep or out of range", warning)
+        self.assertNotIn("connection slots", warning)
+        self.assertNotIn("https://esphome.io/projects/?type=bluetooth", warning)
+        self.assertNotIn("AA:BB:CC:DD:EE:FF", warning)
+
+        # The bleak text still reaches debug, where the guess can be checked.
+        details = [
+            call.args[1]
+            for call in coordinator.logger.debug.call_args_list
+            if call.args[0] == "Connection failure detail: %s"
+        ]
+        self.assertEqual(1, len(details))
+        self.assertIn("No backend with an available connection slot", details[0])
+
+    async def test_a_proxy_out_of_slots_keeps_the_advice(self):
+        """A proxy that has no free slot still names the fix on the warning."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakOutOfConnectionSlotsError(
+                "AC300 - AA:BB:CC:DD:EE:FF: Failed to connect after 10 attempt(s): "
+                "Timeout connecting after 60.0s: No available connection slot: "
+                "The proxy/adapter is out of connection slots or the device is no "
+                "longer reachable; Add additional proxies "
+                "(https://esphome.io/projects/?type=bluetooth) near this device"
+            ),
+        )
+
+        self.assertIn("out of connection slots", warning)
+        self.assertIn("https://esphome.io/projects/?type=bluetooth", warning)
+
+    async def test_a_missing_adapter_keeps_the_advice(self):
+        """Bluetooth being off or absent is the host's problem, not the device's."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakBluetoothNotAvailableError(
+                "Bluetooth adapter is powered off",
+                BleakBluetoothNotAvailableReason.POWERED_OFF,
+            ),
+        )
+
+        self.assertIn("https://esphome.io/projects/?type=bluetooth", warning)
+        self.assertNotIn("powered off, asleep or out of range", warning)
+
+    async def test_a_connection_that_never_happens_stays_neutral(self):
+        """A plain failed connect is not blamed on the adapter or a proxy."""
+        coordinator = make_coordinator()
+        self.patch_timer()
+
+        warning = await self.connect_failure(
+            coordinator,
+            BleakConnectionError(
+                "AC300 - AA:BB:CC:DD:EE:FF: Failed to connect after 5 attempt(s): "
+                "Cannot connect to AA:BB:CC:DD:EE:FF: Unreachable"
+            ),
+        )
+
+        self.assertIn("powered off, asleep or out of range", warning)
+        self.assertNotIn("https://esphome.io/projects/?type=bluetooth", warning)
 
 
 class TestFirstRefreshConnection(unittest.IsolatedAsyncioTestCase):
