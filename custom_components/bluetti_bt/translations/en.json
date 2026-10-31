@@ -170,6 +170,9 @@
       "ctrl_ups_mode": {
         "name": "UPS Mode"
       },
+      "ctrl_reverse_charging_mode": {
+        "name": "Reverse Charging Mode"
+      },
       "ctrl_silent_charging": {
         "name": "Silent Charging"
       },
@@ -450,6 +453,9 @@
       },
       "ctrl_power_off": {
         "name": "Poweroff"
+      },
+      "ctrl_reverse_charging": {
+        "name": "Reverse Charging"
       },
       "ctrl_silent_charging": {
         "name": "Silent Charging"
