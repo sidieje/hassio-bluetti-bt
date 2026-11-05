@@ -44,9 +44,9 @@ def get_category(field: FieldName, writable: bool = True) -> EntityCategory | No
 
     Home Assistant puts uncategorized switch/number/select entities in the
     "Controls" section, so the power and eco toggles (CTRL_AC, CTRL_DC,
-    CTRL_ECO_AC, CTRL_ECO_DC, CTRL_POWER_LIFTING) deliberately have no
-    category here; everything that tunes how a device behaves is CONFIG and
-    lands in the "Configuration" section.
+    CTRL_ECO_AC, CTRL_ECO_DC, CTRL_POWER_LIFTING, CTRL_SLEEP_MODE)
+    deliberately have no category here; everything that tunes how a device
+    behaves is CONFIG and lands in the "Configuration" section.
 
     A setting that this particular model cannot write (the eco thresholds are
     writable on the EL portables but read-only on the AC70 and AC180) is only

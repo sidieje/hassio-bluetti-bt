@@ -353,6 +353,9 @@
       "ctrl_silent_charging": {
         "name": "Stilles Laden"
       },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
+      },
       "ctrl_system_on_off": {
         "name": "System An/Aus"
       },
@@ -442,6 +445,9 @@
       },
       "ctrl_silent_charging": {
         "name": "Stilles Laden"
+      },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
       },
       "ctrl_split_phase": {
         "name": "Split Phase"
