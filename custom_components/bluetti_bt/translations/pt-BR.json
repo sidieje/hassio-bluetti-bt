@@ -123,6 +123,7 @@
       "ctrl_led_mode": { "name": "Modo do LED" },
       "ctrl_power_lifting": { "name": "Power Lifting" },
       "ctrl_power_off": { "name": "Desligar" },
+      "ctrl_sleep_mode": { "name": "Em espera" },
       "ctrl_time_control_on": { "name": "UPS Controle por horário" }
     },
     "select": {

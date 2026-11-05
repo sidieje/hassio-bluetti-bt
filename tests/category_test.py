@@ -23,6 +23,19 @@ class TestDevicePageGrouping(unittest.TestCase):
     def writable_names(self) -> list[str]:
         return [field.name for field in self.device.fields if field.is_writeable()]
 
+    def test_standby_switch_is_a_control(self):
+        """Standby is a power toggle like AC and DC output, not a setting, and
+        the models that expose it hand it to the switch platform."""
+        self.assertIsNone(get_category(FieldName.CTRL_SLEEP_MODE))
+
+        for model in ("AP300", "Elite 200 V2"):
+            device = build_device(f"{model}12345678")
+            with self.subTest(model=model):
+                self.assertIn(
+                    FieldName.CTRL_SLEEP_MODE.value,
+                    [field.name for field in device.get_switch_fields()],
+                )
+
     def test_controls_only_hold_the_power_toggles(self):
         controls = sorted(
             name

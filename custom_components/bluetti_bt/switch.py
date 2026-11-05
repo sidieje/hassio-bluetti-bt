@@ -19,6 +19,7 @@ from bluetti_bt_lib import (
     DeviceField,
     FieldName,
 )
+from bluetti_bt_lib.fields import PulseSwitchField
 
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
@@ -176,6 +177,29 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         self._attr_is_on = response_data is True
         self.async_write_ha_state()
 
+    def _is_pulse_switch(self) -> bool:
+        """Whether this switch is driven by a pulse in another register.
+
+        A PulseSwitchField reports its state in one word (the standby state sits
+        at 174) and is driven by a fixed value written to another (2 to 2013).
+        That write is a power button: it moves the station whichever way it is
+        asked, so the value carried says nothing about the state being asked for.
+        """
+        return isinstance(self._field, PulseSwitchField)
+
+    def _reported_state(self) -> bool | None:
+        """The state the station last reported, or None when it has not said."""
+        data = self.coordinator.data
+        if isinstance(data, dict):
+            value = data.get(self._response_key)
+            if isinstance(value, bool):
+                return value
+
+        if isinstance(self._attr_is_on, bool):
+            return self._attr_is_on
+
+        return None
+
     async def async_turn_on(self, **kwargs):
         """Turn the entity on."""
         self._logger.debug(
@@ -198,6 +222,19 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
             state,
             mac_loggable(self._address),
         )
+
+        if self._is_pulse_switch() and self._reported_state() == state:
+            # The pulse would still move the station, and it would move it out
+            # of the state being asked for, so the read-back would come back
+            # disagreeing with a request the station was already honouring.
+            # Nothing needs to be sent for a state the station reports.
+            self._logger.debug(
+                "Not writing %s=%s on %s: the station already reports that state",
+                self._response_key,
+                state,
+                mac_loggable(self._address),
+            )
+            return
 
         try:
             async with async_timeout.timeout(60):
@@ -235,6 +272,22 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
 
         if not result.verified:
             reported = (result.values or {}).get(self._response_key)
+
+            if self._is_pulse_switch() and reported is not None:
+                # The read-back answers awake or standby and nothing in
+                # between, so a pulse that was not confirmed left the station
+                # where it was rather than half way to the new state. Saying the
+                # station did not move is both the truth and the useful report.
+                self._logger.warning(
+                    "Pulse sent for %s, but the station still reports %s",
+                    self._response_key,
+                    reported,
+                )
+                raise ServiceValidationError(
+                    f"The Bluetti station did not change {self._response_key}; "
+                    f"it still reports {self._response_key}={reported}"
+                )
+
             self._logger.warning(
                 "Write state mismatch for %s: requested %s; device reports %s",
                 self._response_key,
