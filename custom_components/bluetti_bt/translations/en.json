@@ -5,6 +5,17 @@
         "data": {
           "address": "Device"
         }
+      },
+      "device_type": {
+        "title": "Select the device",
+        "description": "Home Assistant could not recognise this station. Pick its model to continue.",
+        "data": {
+          "type": "Model",
+          "use_encryption": "Bluetooth encryption"
+        },
+        "data_description": {
+          "use_encryption": "Only models that answer on the encrypted channel need this, and it is not a security setting. If the device reports no data after being added, change it in its Configure options."
+        }
       }
     },
     "abort": {

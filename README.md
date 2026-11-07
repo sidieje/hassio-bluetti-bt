@@ -19,7 +19,7 @@ This fork focuses on improving connection reliability, polling efficiency, write
 - **Verified writes:** All controls are checked against the device's reported state, improving reliability and the accuracy of Home Assistant entity states.
 - **Write locking:** Prevents duplicate writes while verification is in progress.
 - **Optimised register polling:** Adjacent registers are read in blocks, while static registers such as device name, serial number and Wi-Fi information are read only once during initialisation. This reduces polling times and Bluetooth adapter load.
-- **Automatic device recognition:** Many known devices are recognised automatically, reducing the need for repeated discovery and encryption checks.
+- **Automatic device recognition:** Many known devices are recognised automatically, reducing the need for repeated discovery and encryption checks. A station that nothing recognises is not refused: the integration asks for its model and whether it uses bluetooth encryption, and either answer can be corrected later through the Configure dialog.
 - **Improved connection recovery:** Failed connections are cleaned up, notification subscriptions are retried, and connection locking prevents retries or integration unloads from interrupting active writes.
 - **More reliable state updates:** Controlled retry intervals, repeated read-back verification and quieter logging improve reliability, particularly during outages and when stations are slow to reflect changes.
 
