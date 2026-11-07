@@ -5,6 +5,17 @@
         "data": {
           "address": "Gerät"
         }
+      },
+      "device_type": {
+        "title": "Gerät auswählen",
+        "description": "Home Assistant konnte diese Station nicht erkennen. Wählen Sie das Modell aus, um fortzufahren.",
+        "data": {
+          "type": "Modell",
+          "use_encryption": "Bluetooth-Verschlüsselung"
+        },
+        "data_description": {
+          "use_encryption": "Nur Modelle, die auf dem verschlüsselten Kanal antworten, benötigen dies. Es ist keine Sicherheitseinstellung. Wenn das Gerät nach dem Hinzufügen keine Daten liefert, ändern Sie die Einstellung unter Konfigurieren."
+        }
       }
     },
     "abort": {
@@ -152,6 +163,9 @@
       },
       "ctrl_ups_mode": {
         "name": "UPS Modus"
+      },
+      "ctrl_reverse_charging_mode": {
+        "name": "Rücklademodus"
       },
       "ctrl_silent_charging": {
         "name": "Stilles Laden"
@@ -350,6 +364,9 @@
       "ctrl_silent_charging": {
         "name": "Stilles Laden"
       },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
+      },
       "ctrl_system_on_off": {
         "name": "System An/Aus"
       },
@@ -434,8 +451,14 @@
       "ctrl_power_off": {
         "name": "Ausschalter"
       },
+      "ctrl_reverse_charging": {
+        "name": "Rückladung"
+      },
       "ctrl_silent_charging": {
         "name": "Stilles Laden"
+      },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
       },
       "ctrl_split_phase": {
         "name": "Split Phase"

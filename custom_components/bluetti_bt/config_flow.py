@@ -77,6 +77,49 @@ def identify_from_bt_name(name: Any) -> tuple[str, str, bool] | None:
     return dev_type, dev_type + match[2], KNOWN_DEVICE_TYPES[dev_type]
 
 
+def manual_device_name(dev_type: str, advertised: Any) -> str:
+    """The name to store for a model the user picked by hand.
+
+    A station the recognition missed still advertises its serial number most
+    of the time, so it is kept whenever the advertised name can be read: the
+    entry title and the serial sensor are both built from it. A name that
+    cannot be read leaves the bare type, which is enough, because the entry
+    also stores the picked type exactly and that is what the device is built
+    from.
+    """
+    if isinstance(advertised, str):
+        match = DEVICE_NAME_RE.match(advertised)
+
+        if match is not None:
+            return dev_type + match[2]
+
+    return dev_type
+
+
+def selectable_device_types() -> list[str]:
+    """The models to offer for a manual pick, the known ones first.
+
+    A manual pick is what happens once both the advertised name and a probe
+    have failed, so the whole device table is on offer rather than only the
+    models with a known channel. Anything the library cannot build on its own
+    is left out, since an entry could never be set up from it.
+    """
+    selectable: list[str] = []
+
+    for dev_type, device_cls in DEVICES.items():
+        try:
+            device_cls()
+        except Exception:  # a model that cannot be built cannot be picked
+            continue
+
+        selectable.append(dev_type)
+
+    return sorted(
+        selectable,
+        key=lambda dev_type: (dev_type not in KNOWN_DEVICE_TYPES, dev_type.lower()),
+    )
+
+
 def has_battery_packs(dev_type: Any) -> bool:
     """Whether a model has battery pack registers to walk.
 
@@ -120,6 +163,10 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         self._abort_if_unique_id_configured()
 
+        # Kept as soon as it arrives: the manual step reads the serial number
+        # out of the advertisement when nothing recognised the station
+        self._discovery_info = discovery_info
+
         # Get device type
         identified = identify_from_bt_name(discovery_info.name)
         self._encryption_assumed = identified is not None
@@ -136,7 +183,9 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             recognized = await recognize_device(address, self.hass.loop.create_future)
 
             if recognized is None:
-                return self.async_abort(reason="Device type not supported")
+                # Nothing recognised it, which is no reason to refuse the
+                # device. Ask the user what it is instead of giving up.
+                return await self.async_step_device_type()
 
             dev_type = recognized.name
             full_name = recognized.full_name
@@ -153,8 +202,49 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             dev_type, use_encryption
         ).as_dict
         discovery_info.name = full_name
-        self._discovery_info = discovery_info
         self.context["title_placeholders"] = {"name": discovery_info.name}
+        return await self.async_step_user()
+
+    async def async_step_device_type(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Ask the user about a station the automatic recognition missed."""
+        discovery_info = self._discovery_info
+
+        if discovery_info is None:
+            return self.async_abort(reason="no_unconfigured_devices")
+
+        if user_input is None:
+            return self.async_show_form(
+                step_id="device_type",
+                data_schema=vol.Schema(
+                    {
+                        vol.Required(CONF_TYPE): vol.In(selectable_device_types()),
+                        vol.Required(CONF_USE_ENCRYPTION, default=True): bool,
+                    }
+                ),
+            )
+
+        dev_type = user_input[CONF_TYPE]
+        use_encryption = bool(user_input[CONF_USE_ENCRYPTION])
+
+        discovery_info.manufacturer_data = ManufacturerData(
+            dev_type, use_encryption
+        ).as_dict
+        # The advertised name is still the best source of the serial number, so
+        # it is read here rather than thrown away
+        discovery_info.name = manual_device_name(dev_type, discovery_info.name)
+        # The channel is what the user answered, not what a probe found, which
+        # is exactly what the flag records
+        self._encryption_assumed = True
+        self.context["title_placeholders"] = {"name": discovery_info.name}
+
+        _LOGGER.info(
+            "Device selected by the user as %s (using encryption: %s)",
+            dev_type,
+            use_encryption,
+        )
+
         return await self.async_step_user()
 
     async def async_step_user(

@@ -19,7 +19,7 @@ This fork focuses on improving connection reliability, polling efficiency, write
 - **Verified writes:** All controls are checked against the device's reported state, improving reliability and the accuracy of Home Assistant entity states.
 - **Write locking:** Prevents duplicate writes while verification is in progress.
 - **Optimised register polling:** Adjacent registers are read in blocks, while static registers such as device name, serial number and Wi-Fi information are read only once during initialisation. This reduces polling times and Bluetooth adapter load.
-- **Automatic device recognition:** Many known devices are recognised automatically, reducing the need for repeated discovery and encryption checks.
+- **Automatic device recognition:** Many known devices are recognised automatically, reducing the need for repeated discovery and encryption checks. A station that nothing recognises is not refused: the integration asks for its model and whether it uses bluetooth encryption, and either answer can be corrected later through the Configure dialog.
 - **Improved connection recovery:** Failed connections are cleaned up, notification subscriptions are retried, and connection locking prevents retries or integration unloads from interrupting active writes.
 - **More reliable state updates:** Controlled retry intervals, repeated read-back verification and quieter logging improve reliability, particularly during outages and when stations are slow to reflect changes.
 
@@ -35,6 +35,8 @@ This is particularly useful for stations such as the AC300, which can take longe
 
 If the verification window expires without confirmation, the switch retains its last known state rather than reverting to a value the station has not yet updated. The next polling cycle can then reconcile the entity with the device's reported state. Reads skipped by a station are also retried once before the polling cycle is abandoned.
 
+Standby on the **Apex 300** and **Elite 200 V2** is a pulse rather than a value. The switch shows whether the station is in standby, but the write is a fixed pulse that moves the station to the opposite state, and the pulse register always reads back as zero. Because the same pulse wakes and sleeps the station, a request for the state the station already reports is not sent at all; sending it would flip the station the other way. A pulse that leaves the state unchanged is reported as a station that did not change, and the longer ten second verification window absorbs the time a station takes to reach standby.
+
 Improved connection locking prevents retries and integration unloads from interrupting writes, while more controlled retry intervals and quieter logging improve reliability during outages.
 
 Support for encrypted models remains **experimental**, although it has been tested against physical hardware. This fork is maintained independently, and feedback, testing and issue reports are welcome.
@@ -43,9 +45,9 @@ Support for encrypted models remains **experimental**, although it has been test
 | Device | Controls |
 | --- | --- |
 | **Charger 2** | System on/off, silent charging |
-| **Apex 300** | UPS mode, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **Apex 300** | Standby, UPS mode, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL100 V2**, **EL100 mini** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
-| **EL200 V2**, **EL300** | UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
+| **EL200 V2**, **EL300** | Standby (EL200 V2), UPS mode, grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL30 V2** | Grid charge, AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout, battery SOC range |
 | **EL10** | AC output, DC output, AC and DC eco mode (with eco timers and eco minimum power), charging mode, power lifting, display timeout |
 | **FridgePower** | UPS mode, AC output, DC output, AC and DC eco mode (with eco timers), charging mode, power lifting, time of use, grid self-adaption |

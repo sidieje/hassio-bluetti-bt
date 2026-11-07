@@ -57,6 +57,7 @@ FIELD_DEVICE_CLASS: Dict[FieldName, SensorDeviceClass] = {
     FieldName.PV_S2_CURRENT: SensorDeviceClass.CURRENT,
     FieldName.PV_S2_POWER: SensorDeviceClass.POWER,
     FieldName.PV_S2_VOLTAGE: SensorDeviceClass.VOLTAGE,
+    FieldName.REVERSE_CHARGING_TOP_UP_POWER: SensorDeviceClass.POWER,
     FieldName.SM_P1_CURRENT: SensorDeviceClass.CURRENT,
     FieldName.SM_P1_POWER: SensorDeviceClass.POWER,
     FieldName.SM_P1_VOLTAGE: SensorDeviceClass.VOLTAGE,

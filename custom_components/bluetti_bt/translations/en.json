@@ -5,6 +5,17 @@
         "data": {
           "address": "Device"
         }
+      },
+      "device_type": {
+        "title": "Select the device",
+        "description": "Home Assistant could not recognise this station. Pick its model to continue.",
+        "data": {
+          "type": "Model",
+          "use_encryption": "Bluetooth encryption"
+        },
+        "data_description": {
+          "use_encryption": "Only models that answer on the encrypted channel need this, and it is not a security setting. If the device reports no data after being added, change it in its Configure options."
+        }
       }
     },
     "abort": {
@@ -169,6 +180,9 @@
       },
       "ctrl_ups_mode": {
         "name": "UPS Mode"
+      },
+      "ctrl_reverse_charging_mode": {
+        "name": "Reverse Charging Mode"
       },
       "ctrl_silent_charging": {
         "name": "Silent Charging"
@@ -373,6 +387,9 @@
       "ctrl_silent_charging": {
         "name": "Silent Charging"
       },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
+      },
       "ctrl_system_on_off": {
         "name": "System On/Off"
       },
@@ -451,8 +468,14 @@
       "ctrl_power_off": {
         "name": "Poweroff"
       },
+      "ctrl_reverse_charging": {
+        "name": "Reverse Charging"
+      },
       "ctrl_silent_charging": {
         "name": "Silent Charging"
+      },
+      "ctrl_sleep_mode": {
+        "name": "Standby"
       },
       "ctrl_split_phase": {
         "name": "Split Phase"

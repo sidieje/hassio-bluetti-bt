@@ -7,8 +7,12 @@ import logging
 from time import monotonic
 from typing import Any
 from bleak import BleakClient, BleakScanner
-from bleak.exc import BleakError
-from bleak_retry_connector import BleakClientWithServiceCache, establish_connection
+from bleak.exc import BleakBluetoothNotAvailableError, BleakError
+from bleak_retry_connector import (
+    BleakClientWithServiceCache,
+    BleakOutOfConnectionSlotsError,
+    establish_connection,
+)
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers.event import async_call_later
@@ -54,6 +58,42 @@ PACK_WALK_RETRIES = 2
 # that. Only a second cycle in a row says the link itself is done for, and the
 # connection gets rebuilt from scratch instead.
 FAILED_READS_TO_RECONNECT = 2
+
+# habluetooth's "no backend ... that can reach address" covers both a proxy
+# whose slots are all taken and a device that no scanner can see, and
+# bleak_retry_connector types it as an out of slots failure anyway. A station
+# that was switched off or went to sleep looks exactly like that, so it is
+# checked before the adapter phrases and treated as an unreachable device.
+NO_REACHABLE_BACKEND_PHRASE = "can reach address"
+
+# Wording that only an adapter or a proxy produces, kept to text bleak,
+# bleak-esphome and habluetooth actually emit rather than a loose guess.
+ADAPTER_PHRASES = (
+    "out of connection slots",
+    "no free slot",
+    "too many connections",
+    "no connectable bluetooth adapters",
+)
+
+
+def _points_at_adapter(err: BaseException) -> bool:
+    """Whether a failed connection points at the adapter or a proxy.
+
+    Typed exceptions come first because they are what bleak_retry_connector
+    settled on after its own retries; the phrases cover the failures it leaves
+    untyped. Anything else is treated as a device that is not there.
+    """
+    text = str(err).lower()
+
+    if NO_REACHABLE_BACKEND_PHRASE in text:
+        return False
+
+    if isinstance(
+        err, (BleakOutOfConnectionSlotsError, BleakBluetoothNotAvailableError)
+    ):
+        return True
+
+    return any(phrase in text for phrase in ADAPTER_PHRASES)
 
 
 class PollingCoordinator(DataUpdateCoordinator):
@@ -279,10 +319,12 @@ class PollingCoordinator(DataUpdateCoordinator):
         bleak_retry_connector's own text is several lines of scanner and
         adapter internals that only make sense with debug logging turned on, so
         the warning carries the guess the user can act on and the detail goes to
-        DEBUG. Running out of connection slots is the exception: it names
-        something the user can actually fix, so its advice stays on the warning.
+        DEBUG. A failure that points back at the adapter or a proxy is the
+        exception: it names something the user can actually fix, so its advice
+        stays on the warning. A station that was switched off at the wall must
+        not be told to go and buy proxies.
         """
-        if "connection slot" in str(err):
+        if _points_at_adapter(err):
             return (
                 "the proxy or adapter is out of connection slots or the device "
                 "is no longer reachable; add additional proxies "
