@@ -6,7 +6,21 @@
           "address": "Dispositivo",
           "type": "Modelo (obrigatório para dispositivos PBOX)"
         }
+      },
+      "device_type": {
+        "title": "Selecione o dispositivo",
+        "description": "O Home Assistant não reconheceu esta estação. Escolha o modelo para continuar.",
+        "data": {
+          "type": "Modelo",
+          "use_encryption": "Criptografia bluetooth"
+        },
+        "data_description": {
+          "use_encryption": "Somente modelos que respondem no canal criptografado precisam disso. Não é uma configuração de segurança. Se o dispositivo não reportar dados após ser adicionado, altere em Configurar."
+        }
       }
+    },
+    "abort": {
+      "no_unconfigured_devices": "Nenhum dispositivo encontrado"
     }
   },
   "options": {

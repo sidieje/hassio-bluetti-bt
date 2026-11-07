@@ -5,6 +5,17 @@
         "data": {
           "address": "Gerät"
         }
+      },
+      "device_type": {
+        "title": "Gerät auswählen",
+        "description": "Home Assistant konnte diese Station nicht erkennen. Wählen Sie das Modell aus, um fortzufahren.",
+        "data": {
+          "type": "Modell",
+          "use_encryption": "Bluetooth-Verschlüsselung"
+        },
+        "data_description": {
+          "use_encryption": "Nur Modelle, die auf dem verschlüsselten Kanal antworten, benötigen dies. Es ist keine Sicherheitseinstellung. Wenn das Gerät nach dem Hinzufügen keine Daten liefert, ändern Sie die Einstellung unter Konfigurieren."
+        }
       }
     },
     "abort": {

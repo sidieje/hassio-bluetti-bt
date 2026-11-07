@@ -6,13 +6,25 @@ import unittest
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
+from bluetti_bt_lib.devices import DEVICES
 from bluetti_bt_lib.utils.device_builder import build_device
 from custom_components.bluetti_bt.config_flow import (
     KNOWN_DEVICE_TYPES,
     BluettiConfigFlow,
     identify_from_bt_name,
+    manual_device_name,
+    selectable_device_types,
 )
-from custom_components.bluetti_bt.types import ManufacturerData
+from custom_components.bluetti_bt.types import (
+    CONF_ENCRYPTION_ASSUMED,
+    CONF_TYPE,
+    CONF_USE_ENCRYPTION,
+    ManufacturerData,
+)
+from custom_components.bluetti_bt.utils import (
+    build_bluetti_device,
+    device_class_for_type,
+)
 
 
 class TestIdentifyFromBtName(unittest.TestCase):
@@ -132,6 +144,7 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         )
         flow._abort_if_unique_id_configured = Mock()
         flow.async_abort = Mock(return_value="aborted")
+        flow.async_show_form = Mock(return_value="form")
         flow.async_step_user = AsyncMock(return_value="created")
         return flow
 
@@ -232,7 +245,8 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(flow._discovery_info.name, "AC30012345678")
         self.assertFalse(flow._encryption_assumed)
 
-    async def test_unsupported_device_aborts(self):
+    async def test_unrecognised_name_asks_the_user(self):
+        """A station nothing recognised is offered to the user, not refused."""
         flow = self.make_flow()
         discovery = self.make_discovery("PBOX12345678")
 
@@ -242,9 +256,13 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
         ):
             result = await flow.async_step_bluetooth(discovery)
 
-        self.assertEqual(result, "aborted")
-        flow.async_abort.assert_called_once_with(reason="Device type not supported")
-        self.assertIsNone(flow._discovery_info)
+        flow.async_abort.assert_not_called()
+        self.assertEqual(result, "form")
+        self.assertEqual(
+            flow.async_show_form.call_args.kwargs["step_id"], "device_type"
+        )
+        # The advertisement is kept, since it still carries the serial number
+        self.assertEqual(flow._discovery_info.name, "PBOX12345678")
 
     async def test_configured_device_says_why_it_was_skipped(self):
         """A duplicate advertisement is reported instead of failing silently."""
@@ -262,6 +280,186 @@ class TestDiscoveryShortcut(unittest.IsolatedAsyncioTestCase):
 
         recognize.assert_not_called()
         self.assertIn("already configured", "\n".join(logs.output))
+
+
+class TestManualDeviceName(unittest.TestCase):
+    """Test the name a manually picked model is stored under."""
+
+    def test_serial_is_kept_from_the_advertisement(self):
+        """The serial number outlives a name whose model was not recognised."""
+        self.assertEqual(
+            manual_device_name("AC500", "AC50012345678"), "AC50012345678"
+        )
+        self.assertEqual(
+            manual_device_name("CHARGER2", "CHARGER 22551114213971"),
+            "CHARGER22551114213971",
+        )
+
+    def test_bare_type_when_the_advertisement_cannot_be_read(self):
+        for advertised in ("PBOX12345678", "el102543110143137", "", None):
+            with self.subTest(advertised=advertised):
+                self.assertEqual(manual_device_name("AC300", advertised), "AC300")
+
+    def test_the_stored_entry_still_builds(self):
+        """However the name turned out, the picked type builds the device."""
+        for advertised in ("AC50012345678", "PBOX12345678", None):
+            for dev_type in selectable_device_types():
+                name = re.sub(
+                    "[^A-Z0-9]+", "", manual_device_name(dev_type, advertised)
+                )
+
+                with self.subTest(dev_type=dev_type, advertised=advertised):
+                    self.assertIsNotNone(build_bluetti_device(dev_type, name))
+
+
+class TestSelectableDeviceTypes(unittest.TestCase):
+    """Test the models a manual pick offers."""
+
+    def test_the_whole_device_table_is_offered(self):
+        self.assertEqual(set(selectable_device_types()), set(DEVICES))
+
+    def test_known_models_come_first(self):
+        """The stations with a known channel sit at the top of the list."""
+        offered = selectable_device_types()
+        known = [dev_type for dev_type in offered if dev_type in KNOWN_DEVICE_TYPES]
+
+        self.assertEqual(len(known), len(KNOWN_DEVICE_TYPES))
+        self.assertEqual(offered[: len(known)], known)
+
+    def test_every_offered_model_is_buildable(self):
+        for dev_type in selectable_device_types():
+            with self.subTest(dev_type=dev_type):
+                self.assertIs(device_class_for_type(dev_type), DEVICES[dev_type])
+
+
+class TestManualDeviceTypeStep(unittest.IsolatedAsyncioTestCase):
+    """Test the step that asks the user about an unrecognised station."""
+
+    def make_flow(self):
+        """Create a config flow instance without initializing Home Assistant."""
+        flow = object.__new__(BluettiConfigFlow)
+        flow._discovery_info = None
+        flow._encryption_assumed = False
+        flow.context = {}
+        flow.hass = SimpleNamespace(loop=asyncio.get_running_loop())
+        flow.async_set_unique_id = AsyncMock()
+        flow._async_current_entries = Mock(return_value=[])
+        flow._abort_if_unique_id_configured = Mock()
+        flow.async_abort = Mock(return_value="aborted")
+        flow.async_show_form = Mock(return_value="form")
+        flow.async_create_entry = Mock(return_value="created")
+        flow.async_step_user = AsyncMock(return_value="created")
+        return flow
+
+    def make_discovery(self, name):
+        """An advertisement for a station nothing recognised."""
+        return SimpleNamespace(
+            address="CB:DC:14:DC:2A:C0",
+            name=name,
+            manufacturer_data={},
+        )
+
+    async def form(self, flow):
+        """The fields the step offers, with their defaults."""
+        await flow.async_step_device_type()
+
+        schema = flow.async_show_form.call_args.kwargs["data_schema"]
+
+        return {
+            str(key): key.default() if callable(key.default) else key.default
+            for key in schema.schema
+        }
+
+    async def test_the_form_asks_for_model_and_channel(self):
+        flow = self.make_flow()
+        flow._discovery_info = self.make_discovery("PBOX12345678")
+
+        fields = await self.form(flow)
+
+        self.assertEqual(sorted(fields), sorted([CONF_TYPE, CONF_USE_ENCRYPTION]))
+        # Most current stations encrypt, so that is where the box starts
+        self.assertTrue(fields[CONF_USE_ENCRYPTION])
+
+    async def test_the_model_field_offers_the_device_table(self):
+        flow = self.make_flow()
+        flow._discovery_info = self.make_discovery("PBOX12345678")
+
+        await flow.async_step_device_type()
+
+        schema = flow.async_show_form.call_args.kwargs["data_schema"]
+        offered = next(
+            validator.container
+            for key, validator in schema.schema.items()
+            if key.schema == CONF_TYPE
+        )
+
+        self.assertEqual(set(offered), set(DEVICES))
+
+    async def test_without_a_discovery_there_is_nothing_to_ask(self):
+        flow = self.make_flow()
+
+        result = await flow.async_step_device_type()
+
+        self.assertEqual(result, "aborted")
+        flow.async_abort.assert_called_once_with(reason="no_unconfigured_devices")
+
+    async def test_a_pick_continues_into_the_user_step(self):
+        flow = self.make_flow()
+        flow._discovery_info = self.make_discovery("AC50012345678")
+
+        result = await flow.async_step_device_type(
+            {CONF_TYPE: "AC500", CONF_USE_ENCRYPTION: True}
+        )
+
+        self.assertEqual(result, "created")
+        flow.async_step_user.assert_awaited_once()
+
+        manufacturer_data = ManufacturerData.from_dict(
+            flow._discovery_info.manufacturer_data
+        )
+        self.assertEqual(manufacturer_data.dev_type, "AC500")
+        self.assertTrue(manufacturer_data.use_encryption)
+        self.assertEqual(flow._discovery_info.name, "AC50012345678")
+        self.assertTrue(flow._encryption_assumed)
+        self.assertEqual(
+            flow.context["title_placeholders"], {"name": "AC50012345678"}
+        )
+
+    async def test_an_unreadable_advertisement_leaves_the_bare_type(self):
+        flow = self.make_flow()
+        flow._discovery_info = self.make_discovery("PBOX12345678")
+
+        await flow.async_step_device_type(
+            {CONF_TYPE: "AC300", CONF_USE_ENCRYPTION: False}
+        )
+
+        manufacturer_data = ManufacturerData.from_dict(
+            flow._discovery_info.manufacturer_data
+        )
+        self.assertEqual(manufacturer_data.dev_type, "AC300")
+        self.assertFalse(manufacturer_data.use_encryption)
+        self.assertEqual(flow._discovery_info.name, "AC300")
+
+    async def test_the_entry_is_created_as_a_recognised_one_is(self):
+        """The manual pick has to end in the same entry the probe path makes."""
+        flow = self.make_flow()
+        flow._discovery_info = self.make_discovery("AC50012345678")
+        # Run the real user step so the stored entry is checked end to end
+        flow.async_step_user = BluettiConfigFlow.async_step_user.__get__(flow)
+
+        await flow.async_step_device_type(
+            {CONF_TYPE: "AC500", CONF_USE_ENCRYPTION: True}
+        )
+        # The user still confirms the address, exactly as a recognised device does
+        result = await flow.async_step_user({})
+
+        self.assertEqual(result, "created")
+
+        entry = flow.async_create_entry.call_args.kwargs
+        self.assertEqual(entry["title"], "AC50012345678")
+        self.assertEqual(entry["data"][CONF_TYPE], "AC500")
+        self.assertTrue(entry["data"][CONF_USE_ENCRYPTION])
+        self.assertTrue(entry["data"][CONF_ENCRYPTION_ASSUMED])
 
 
 if __name__ == "__main__":
