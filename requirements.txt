@@ -1,6 +1,17 @@
 # Pinned to the Home Assistant release this integration is developed and tested
 # against. An unpinned homeassistant lets CI install a newer core than anyone
-# runs locally, which changes behaviour under test (and on Python 3.15 omits a
-# bluetooth dependency, so whole test modules fail to import). Bump deliberately.
+# runs locally, which changes behaviour under test. Bump deliberately, and
+# re-check the aiousbwatcher/pyserial pins against the new release's
+# homeassistant/package_constraints.txt and component manifests.
 homeassistant==2026.2.3
 bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment
+
+# Dependencies that Home Assistant loads at runtime instead of declaring in its
+# wheel metadata, so a clean `pip install homeassistant` does not pull them in.
+# homeassistant.components.usb -- reached from config_flow.py via
+# homeassistant.components.bluetooth -- imports both at module scope and raises
+# ModuleNotFoundError without them, which drops the two config_flow test modules
+# out of the run (163 tests instead of 196). They were only ever present on dev
+# machines by accident, so CI was the first place the gap showed.
+aiousbwatcher==1.1.1
+pyserial==3.5
