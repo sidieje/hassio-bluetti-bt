@@ -3,9 +3,9 @@ name: Validate with hassfest
 on:
   push:
   pull_request:
-  schedule:
-    - cron: "0 0 * * *"
-  # Allows you to run this workflow manually from the Actions tab
+  # No schedule: a nightly run can turn an upstream rule change into a red X on
+  # this repo with no push from anyone, which reads as a failure with nothing to
+  # act on. Use the manual trigger to re-check against current rules.
   workflow_dispatch:
 
 jobs:
