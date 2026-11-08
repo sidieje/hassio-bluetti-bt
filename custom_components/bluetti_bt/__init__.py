@@ -5,7 +5,11 @@ import asyncio
 import re
 import logging
 from typing import List
-from homeassistant.config_entries import ConfigEntry, ConfigEntryError
+from homeassistant.config_entries import (
+    ConfigEntry,
+    ConfigEntryError,
+    ConfigEntryNotReady,
+)
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -109,13 +113,23 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             f"Bluetti device type {config.dev_type} is not supported"
         )
 
-    # A failed first poll raises ConfigEntryNotReady, which makes Home
-    # Assistant retry the whole setup with its own backoff, while the
-    # unsupported device type above raises ConfigEntryError and leaves the entry
-    # failed without retrying. The teardown above has already closed the
-    # connection and cancelled the pending retry timer by then, so nothing is
-    # left running between attempts.
-    await coordinator.async_config_entry_first_refresh()
+    # A station that is asleep, switched off or out of range still gets its
+    # entry loaded. The coordinator is left offline, its own ladder keeps
+    # reconnecting after 20, 30 then every 60s, and the entities go unavailable
+    # once UNAVAILABLE_AFTER_FAILED_CYCLES cycles have failed. Letting the
+    # ConfigEntryNotReady out instead hands the retry to Home Assistant, whose
+    # backoff tops out at 80s and which then waits behind another connection
+    # attempt, so a station powered back on took minutes to reappear. A
+    # ConfigEntryError still propagates: an unsupported device type is never
+    # going to fix itself, so retrying it forever would be the wrong remedy.
+    try:
+        await coordinator.async_config_entry_first_refresh()
+    except ConfigEntryNotReady:
+        logger.info(
+            "Loading '%s' without a first reading: %s",
+            entry.title,
+            coordinator.last_exception,
+        )
 
     # Options are written to the entry by the options flow; apply them to the
     # coordinator that is running rather than waiting for a restart.
