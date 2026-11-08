@@ -92,6 +92,12 @@ def make_coordinator_class(
             self.bluetti_device = bluetti_device
             self.consecutive_failures = 0
             self.last_update_success = True
+            # The real coordinator keeps the exception that ended a refresh
+            # here, and setup reports it when it survives an offline first
+            # refresh.
+            self.last_exception = (
+                first_refresh if isinstance(first_refresh, Exception) else None
+            )
             self.data = None
             self.async_config_entry_first_refresh = AsyncMock(side_effect=first_refresh)
             self.apply_options = AsyncMock()
@@ -117,14 +123,20 @@ async def run_on_unload(entry: FakeEntry) -> None:
 class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
     """A failed or retried setup must not leave anything running."""
 
-    async def test_failed_first_refresh_unloads_coordinator(self):
-        """A ConfigEntryNotReady leaves no coordinator and no entry data."""
+    async def test_fatal_first_refresh_unloads_coordinator(self):
+        """A ConfigEntryError leaves no coordinator and no entry data.
+
+        Only ConfigEntryNotReady is survived: an error that says the entry can
+        never work still ends setup, and its teardown must still run.
+        """
         hass = make_hass()
         entry = FakeEntry()
-        coordinator_class = make_coordinator_class(first_refresh=ConfigEntryNotReady())
+        coordinator_class = make_coordinator_class(
+            first_refresh=ConfigEntryError("no bluetooth connection")
+        )
 
         with patch("custom_components.bluetti_bt.PollingCoordinator", coordinator_class):
-            with self.assertRaises(ConfigEntryNotReady):
+            with self.assertRaises(ConfigEntryError):
                 await async_setup_entry(hass, entry)
 
             coordinator = coordinator_class.instances[0]
@@ -161,10 +173,12 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
         """Teardown must exist before the first poll can fail."""
         hass = make_hass()
         entry = FakeEntry()
-        coordinator_class = make_coordinator_class(first_refresh=ConfigEntryNotReady())
+        coordinator_class = make_coordinator_class(
+            first_refresh=ConfigEntryError("no bluetooth connection")
+        )
 
         with patch("custom_components.bluetti_bt.PollingCoordinator", coordinator_class):
-            with self.assertRaises(ConfigEntryNotReady):
+            with self.assertRaises(ConfigEntryError):
                 await async_setup_entry(hass, entry)
 
             coordinator = coordinator_class.instances[0]
@@ -173,6 +187,26 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(2, registered)
         coordinator.async_unload.assert_awaited_once()
+
+    async def test_offline_first_refresh_still_loads_the_entry(self):
+        """A station that is not there is not a reason to refuse the entry."""
+        hass = make_hass()
+        entry = FakeEntry()
+        coordinator_class = make_coordinator_class(
+            first_refresh=ConfigEntryNotReady()
+        )
+
+        with patch("custom_components.bluetti_bt.PollingCoordinator", coordinator_class):
+            self.assertTrue(await async_setup_entry(hass, entry))
+
+        coordinator = coordinator_class.instances[0]
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+            entry, PLATFORMS
+        )
+        self.assertIs(
+            hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR], coordinator
+        )
+        self.assertEqual(1, len(entry.update_listeners))
 
     async def test_coordinator_receives_the_config_entry(self):
         """The coordinator is built with its entry so HA can schedule it."""
@@ -311,14 +345,15 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
         client.disconnect.assert_awaited_once()
         reader.disconnect.assert_awaited_once()
 
-    async def test_offline_setup_arms_nothing_that_survives_the_retry(self):
-        """An unreachable device retries the whole entry, not a private task.
+    async def test_offline_setup_loads_the_entry_and_keeps_its_ladder(self):
+        """An unreachable device loads, retries fast, and leaks no task.
 
-        A failed first refresh used to load the entry anyway and leave a
-        private retry timer behind. Home Assistant's own ConfigEntryNotReady
-        backoff now covers the retry, so setup must hand back cleanly: no
-        task for bootstrap to wait on, and no coordinator left in hass.data
-        once the on_unload callbacks it runs have finished.
+        Failing setup here instead handed the retry to Home Assistant, whose
+        backoff tops out at 80s and then waits behind another full connection
+        attempt, so a station powered back on took about five minutes to come
+        back. The coordinator's own ladder retries after 20, 30 then every 60s,
+        so the entry has to load with that timer armed and the platforms
+        forwarded. Bootstrap still must not end up waiting on a task of ours.
         """
         hass = make_hass()
         entry = FakeEntry()
@@ -331,22 +366,25 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
             "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
             new=AsyncMock(return_value=None),
         ):
-            with self.assertRaises(ConfigEntryNotReady):
-                await async_setup_entry(hass, entry)
+            self.assertTrue(await async_setup_entry(hass, entry))
 
         coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
-        # The failed attempt still recorded why, and armed its retry timer.
         self.assertTrue(coordinator._offline)
         self.assertIsNone(coordinator.data)
+        self.assertEqual(1, coordinator.consecutive_failures)
         self.assertIsNotNone(coordinator._retry_unsub)
-
-        # Home Assistant's bootstrap waits for every task created during the
-        # setup phase, so a failed setup may only have armed a timer.
+        hass.config_entries.async_forward_entry_setups.assert_awaited_once_with(
+            entry, PLATFORMS
+        )
         self.assertEqual(set(), asyncio.all_tasks() - before)
 
-        # Home Assistant runs the on_unload callbacks when setup fails.
-        await run_on_unload(entry)
+        # Unloading the loaded entry has to take the ladder with it.
+        with patch(
+            "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
+            new=AsyncMock(return_value=None),
+        ):
+            self.assertTrue(await async_unload_entry(hass, entry))
 
         self.assertIsNone(coordinator._retry_unsub)
         self.assertEqual(set(), asyncio.all_tasks() - before)

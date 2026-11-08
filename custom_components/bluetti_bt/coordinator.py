@@ -34,24 +34,26 @@ OFFLINE_RETRY_DELAYS = (20, 30, 60)
 
 # Adapters and remote proxies are still coming up while config entries load, so
 # the first connection attempts after a restart usually fail. The deadline is
-# kept per Home Assistant run rather than per coordinator because a failed
-# first refresh tears this coordinator down and the setup retry builds a new
-# one, which would otherwise reset the grace and leave a device that is really
-# gone unreported.
+# kept per Home Assistant run rather than per coordinator, because a reload
+# builds a new coordinator and a per-coordinator deadline would keep resetting
+# the grace and leave a device that is really gone unreported.
 STARTUP_GRACE_SECONDS = 120
 STARTUP_GRACE_KEY = "startup_grace_until"
 
 # Home Assistant waits for a config entry to finish setting up, and bleak
 # spends about 20s per connection attempt plus its own backoffs, so the
 # configured attempt count can hold up bootstrap for minutes on a tower that
-# is unreachable at startup. Cutting the setup refresh down to a couple of
-# attempts was counterproductive though: it made the first refresh fail more
-# often, and every failure is now a ConfigEntryNotReady that Home Assistant
-# retries on its own backoff of 5, 10, 20, 40 and 80s, which costs far more
-# time than the attempts it saved. The setup refresh therefore gets the same
-# number of attempts as the default max_retries, and only a user who raised
-# max_retries above it is trimmed back here.
-FIRST_REFRESH_MAX_ATTEMPTS = 5
+# is unreachable at startup. The setup refresh therefore makes a single
+# attempt: enough to catch a station that is already advertising, and no
+# longer than that. A station that misses it is not lost, because the entry
+# loads anyway and the offline ladder reconnects with the full max_retries
+# once bootstrap is done.
+FIRST_REFRESH_MAX_ATTEMPTS = 1
+
+# What happens to a station that could not be reached, for the user. The
+# offline ladder retries the connection whether the failure happened during
+# the setup refresh or on a later poll, so there is only one answer to give.
+RETRY_ADVICE = "Polling will retry."
 
 # A pack walk that answers fewer packs than the station reports is retried on
 # the following cycles before its readings are used anyway.
@@ -152,10 +154,9 @@ class PollingCoordinator(DataUpdateCoordinator):
             STARTUP_GRACE_KEY, monotonic() + STARTUP_GRACE_SECONDS
         )
         # The first refresh is the one Home Assistant waits for during entry
-        # setup, so it connects with fewer attempts. A failed first refresh
-        # tears this coordinator down and the setup retry builds a new one, so
-        # the flag is set again for every setup attempt and only needs to be
-        # cleared once a refresh has run.
+        # setup, so it connects with fewer attempts. It is cleared as soon as a
+        # refresh has run, and an entry that loads while offline never does
+        # another setup refresh, so it only needs setting here.
         self._setup_refresh = True
         self._retry_attempt = False
         # Offline retries are one-shot timers rather than a long-lived task:
@@ -238,8 +239,7 @@ class PollingCoordinator(DataUpdateCoordinator):
         if device is None:
             self._mark_offline(
                 f"{mac_loggable(self.config.address)} is not advertising: it is "
-                f"probably powered off, asleep or out of range. "
-                f"{self._retry_advice()}"
+                f"probably powered off, asleep or out of range. {RETRY_ADVICE}"
             )
             return None
 
@@ -326,22 +326,6 @@ class PollingCoordinator(DataUpdateCoordinator):
         """Whether an offline report is still too early to warn about."""
         return not self._ever_connected and monotonic() < self._startup_grace_until
 
-    def _retry_advice(self) -> str:
-        """What is going to be retried, on one line.
-
-        Telling the user that polling will retry is wrong for the refresh that
-        runs while the entry is being set up: that failure ends setup with
-        ConfigEntryNotReady, and Home Assistant retries the whole entry on its
-        own backoff rather than the polling cycle doing anything.
-        """
-        if self._setup_refresh:
-            return (
-                "Setup will fail and Home Assistant will retry it with its own "
-                "backoff."
-            )
-
-        return "Polling will retry."
-
     def _offline_reason(self, err: BaseException) -> str:
         """What a failed connection most likely means, on one line.
 
@@ -358,12 +342,11 @@ class PollingCoordinator(DataUpdateCoordinator):
                 "the proxy or adapter is out of connection slots or the device "
                 "is no longer reachable; add additional proxies "
                 "(https://esphome.io/projects/?type=bluetooth) near this device. "
-                f"{self._retry_advice()}"
+                f"{RETRY_ADVICE}"
             )
 
         return (
-            "it is probably powered off, asleep or out of range. "
-            f"{self._retry_advice()}"
+            f"it is probably powered off, asleep or out of range. {RETRY_ADVICE}"
         )
 
     def _hide_address(self, err: BaseException) -> str:
