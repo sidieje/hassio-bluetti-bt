@@ -1191,31 +1191,42 @@ class TestFailedCycleNotification(unittest.IsolatedAsyncioTestCase):
     async def test_a_raising_listener_does_not_mask_the_failure(self):
         """A listener blowing up must not be filed as the reason for the cycle.
 
-        async_update_listeners has no per-listener guard, so a notification
-        made from inside the refresh would replace the UpdateFailed in flight
-        and Home Assistant would log an unexpected exception instead of
-        recording a failed cycle.
+        The notification is deferred into its own loop callback so that a
+        listener which raises cannot replace the UpdateFailed in flight. What
+        Home Assistant then does with the listener's own exception is its
+        business: cores without a per-listener guard let it reach the loop
+        exception handler, newer ones swallow it. So this asserts only what the
+        coordinator depends on -- the cycle is still recorded as a failed read
+        -- and merely requires that anything surfaced is the listener's error.
         """
         coordinator = self.make_live_coordinator([None, None])
         boom = ValueError("listener")
-        failures = []
+        calls = []
+        surfaced = []
         coordinator.hass.loop.set_exception_handler(
-            lambda _loop, context: failures.append(context["exception"])
+            lambda _loop, context: surfaced.append(context["exception"])
         )
 
         await coordinator._async_refresh()
         await asyncio.sleep(0)
 
+        def explode() -> None:
+            calls.append(boom)
+            raise boom
+
         # Home Assistant sent the notification about the transition itself.
         # From here on it is the coordinator's to supply, and the entities are
         # the ones that blow up.
-        coordinator.async_add_listener(Mock(side_effect=boom))
+        coordinator.async_add_listener(explode)
 
         await coordinator._async_refresh()
         await asyncio.sleep(0)
 
+        self.assertEqual([boom], calls, "the raising listener never ran")
         self.assertIsInstance(coordinator.last_exception, UpdateFailed)
-        self.assertEqual([boom], failures)
+        self.assertNotIn("listener", str(coordinator.last_exception))
+        for raised in surfaced:
+            self.assertIs(raised, boom)
 
 
 if __name__ == "__main__":

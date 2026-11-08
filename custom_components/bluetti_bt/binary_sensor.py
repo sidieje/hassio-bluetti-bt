@@ -184,5 +184,5 @@ class BluettiBinarySensor(CoordinatorEntity, BinarySensorEntity):
             return
 
         self._set_available()
-        self._attr_is_on = self.coordinator.data[self._response_key] is True
+        self._attr_is_on = response_data is True
         self.async_write_ha_state()

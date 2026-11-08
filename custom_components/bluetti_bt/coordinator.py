@@ -739,10 +739,9 @@ class PollingCoordinator(DataUpdateCoordinator):
 
         The cycle is counted here rather than left to the entities, because Home
         Assistant suppresses the notification on every cycle after the first
-        failure. That notification is deferred into its own loop callback:
-        async_update_listeners has no per listener guard, so running it on the
-        way out would let a listener that raises replace the UpdateFailed that
-        is being reported.
+        failure. That notification is deferred into its own loop callback, so
+        that a listener which raises cannot replace the UpdateFailed that is
+        being reported.
         """
         self.consecutive_failures += 1
 
