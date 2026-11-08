@@ -1,9 +1,36 @@
 """Tools."""
 
-from typing import Any, Callable
+from typing import TYPE_CHECKING, Any, Callable
 
 from bluetti_bt_lib import BluettiDevice, build_device
 from bluetti_bt_lib.devices import DEVICE_ALIASES, DEVICES
+
+from .const import UNAVAILABLE_AFTER_FAILED_CYCLES
+
+if TYPE_CHECKING:
+    from .coordinator import PollingCoordinator
+
+
+def debounced_available(
+    coordinator: "PollingCoordinator", attr_available: bool
+) -> bool:
+    """Whether an entity presents itself as available.
+
+    Home Assistant's own CoordinatorEntity.available reports
+    coordinator.last_update_success, and every entity in this integration
+    overrides it, so the debounce is applied here instead. Counting the
+    coordinator's failed cycles rather than a counter the entity keeps itself is
+    what makes that work: Home Assistant stops notifying the entities on the
+    cycles after a refresh fails, so an entity counting its own notifications
+    would stop counting at the first one.
+
+    attr_available carries the reasons an entity has of its own, such as an
+    empty pack slot or a field the device does not report.
+    """
+    return (
+        attr_available
+        and coordinator.consecutive_failures < UNAVAILABLE_AFTER_FAILED_CYCLES
+    )
 
 
 def device_class_for_type(dev_type: Any) -> Callable[[], BluettiDevice] | None:

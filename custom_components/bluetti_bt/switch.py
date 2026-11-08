@@ -23,9 +23,14 @@ from bluetti_bt_lib.fields import PulseSwitchField
 
 from .types import FullDeviceConfig, get_category
 from . import device_info as dev_info, get_unique_id
-from .const import DATA_COORDINATOR, DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN, UNAVAILABLE_AFTER_FAILED_CYCLES
 from .coordinator import PollingCoordinator
-from .utils import build_bluetti_device, mac_loggable, unique_id_logable
+from .utils import (
+    build_bluetti_device,
+    debounced_available,
+    mac_loggable,
+    unique_id_logable,
+)
 
 
 async def async_setup_entry(
@@ -102,7 +107,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         self._field = field
         self._response_key = field.name
         self._use_encryption = use_encryption
-        self._unavailable_counter = 5
+        self._unavailable_counter = 0
 
         self._attr_has_entity_name = True
         self._attr_device_info = device_info
@@ -114,7 +119,7 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self._attr_available
+        return debounced_available(self.coordinator, self._attr_available)
 
     def _set_available(self):
         """Set switch as available."""
@@ -125,14 +130,20 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
 
     def _set_unavailable(self, cause: str = "Unknown"):
         """Set switch as unavailable."""
-        self._unavailable_counter += 1
+        # Capped at the threshold, because the attributes are published with the
+        # counter in them: once the entity is unavailable Home Assistant skips
+        # the state write when nothing has changed, but only if the counter has
+        # stopped moving. An outage would otherwise rewrite every entity of a
+        # tower station on every cycle for as long as it lasted.
+        if self._unavailable_counter < UNAVAILABLE_AFTER_FAILED_CYCLES:
+            self._unavailable_counter += 1
 
         self._attr_extra_state_attributes = {
             "unavailable_counter": self._unavailable_counter,
             "unavailable_cause": cause,
         }
 
-        if self._unavailable_counter >= 5:
+        if self._unavailable_counter >= UNAVAILABLE_AFTER_FAILED_CYCLES:
             self._attr_available = False
 
         self.async_write_ha_state()
@@ -140,6 +151,15 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+
+        # A failed cycle reaches the entities through the coordinator's own
+        # notification, and coordinator.data is still the last good dict rather
+        # than None because Home Assistant leaves it alone when the refresh
+        # raises. Treating that as fresh data would publish the stale readings
+        # as available and clear the debounce.
+        if not self.coordinator.last_update_success:
+            self._set_unavailable("Polling failed")
+            return
 
         if self.coordinator.data is None:
             self._logger.debug(

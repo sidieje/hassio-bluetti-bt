@@ -9,7 +9,7 @@
       },
       "device_type": {
         "title": "Selecione o dispositivo",
-        "description": "O Home Assistant não reconheceu esta estação. Escolha o modelo para continuar.",
+        "description": "O Home Assistant não reconheceu esta estação. Escolha o modelo para continuar.\n\nUm modelo escolhido não foi testado com esta estação: ela pode funcionar apenas parcialmente ou não funcionar, e os interruptores escrevem nos registros do modelo escolhido. Use por sua conta e risco.",
         "data": {
           "type": "Modelo",
           "use_encryption": "Criptografia bluetooth"

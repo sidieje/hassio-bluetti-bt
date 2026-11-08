@@ -8,7 +8,7 @@
       },
       "device_type": {
         "title": "Select the device",
-        "description": "Home Assistant could not recognise this station. Pick its model to continue.",
+        "description": "Home Assistant could not recognise this station. Pick its model to continue.\n\nA picked model is untested against this station: it may work only partly or not at all, and its switches write to the picked model's registers. Use at your own risk.",
         "data": {
           "type": "Model",
           "use_encryption": "Bluetooth encryption"

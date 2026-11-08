@@ -15,10 +15,15 @@ from bluetti_bt_lib import FieldName, get_unit
 from bluetti_bt_lib.fields import NumberField
 
 from . import device_info as dev_info, get_unique_id, FullDeviceConfig
-from .const import DATA_COORDINATOR, DOMAIN
+from .const import DATA_COORDINATOR, DOMAIN, UNAVAILABLE_AFTER_FAILED_CYCLES
 from .coordinator import PollingCoordinator
 from .pack_slots import apply_pack_visibility, occupied_slots, watch_pack_slots
-from .utils import build_bluetti_device, mac_loggable, unique_id_logable
+from .utils import (
+    build_bluetti_device,
+    debounced_available,
+    mac_loggable,
+    unique_id_logable,
+)
 from .types import get_device_class, get_state_class, get_category
 
 
@@ -229,7 +234,7 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
     @property
     def available(self) -> bool:
         """Return if entity is available."""
-        return self._attr_available
+        return debounced_available(self.coordinator, self._attr_available)
 
     def _set_available(self):
         """Set sensor as available."""
@@ -240,14 +245,20 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
 
     def _set_unavailable(self, cause: str = "Unknown"):
         """Set sensor as unavailable."""
-        self._unavailable_counter += 1
+        # Capped at the threshold, because the attributes are published with the
+        # counter in them: once the entity is unavailable Home Assistant skips
+        # the state write when nothing has changed, but only if the counter has
+        # stopped moving. An outage would otherwise rewrite every entity of a
+        # tower station on every cycle for as long as it lasted.
+        if self._unavailable_counter < UNAVAILABLE_AFTER_FAILED_CYCLES:
+            self._unavailable_counter += 1
 
         self._attr_extra_state_attributes = {
             "unavailable_counter": self._unavailable_counter,
             "unavailable_cause": cause,
         }
 
-        if self._unavailable_counter >= 5:
+        if self._unavailable_counter >= UNAVAILABLE_AFTER_FAILED_CYCLES:
             self._attr_available = False
 
         self.async_write_ha_state()
@@ -255,6 +266,15 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
     @callback
     def _handle_coordinator_update(self) -> None:
         """Handle updated data from the coordinator."""
+
+        # A failed cycle reaches the entities through the coordinator's own
+        # notification, and coordinator.data is still the last good dict rather
+        # than None because Home Assistant leaves it alone when the refresh
+        # raises. Treating that as fresh data would publish the stale readings
+        # as available and clear the debounce.
+        if not self.coordinator.last_update_success:
+            self._set_unavailable("Polling failed")
+            return
 
         if self.coordinator.data is None:
             self._logger.debug(

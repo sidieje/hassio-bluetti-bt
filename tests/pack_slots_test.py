@@ -4,10 +4,12 @@ The library reports the slots that hold a pack, and the integration uses that
 to keep the entities of the empty ones out of the entity registry.
 """
 
+import asyncio
 import logging
 import unittest
 from unittest.mock import Mock, patch
 
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers import entity_registry as er
 
 from custom_components.bluetti_bt.pack_slots import (
@@ -229,6 +231,49 @@ class TestWatchPackSlots(unittest.TestCase):
         listeners[0]()
 
         self.assertFalse(hass.config_entries.async_schedule_reload.called)
+
+    def strict_watch(self, data):
+        """Watch with a hass that behaves like asyncio does.
+
+        A plain Mock accepts anything, so it happily took the None that
+        async_schedule_reload returns and handed it to create_task. Give the
+        double asyncio's refusal to schedule a non-coroutine instead.
+        """
+        hass = Mock(spec=HomeAssistant)
+        entry = Mock()
+        coordinator = Mock()
+        coordinator.data = data
+
+        def create_task(target, **_kwargs):
+            if not asyncio.iscoroutine(target):
+                raise TypeError(f"a coroutine was expected, got {target!r}")
+            return Mock()
+
+        hass.async_create_task.side_effect = create_task
+
+        watch_pack_slots(hass, entry, coordinator, logging.getLogger())
+        listener = coordinator.async_add_listener.call_args[0][0]
+
+        return hass, entry, coordinator, [listener]
+
+    def test_reload_is_not_wrapped_in_a_task(self):
+        """The reload survives being scheduled the way asyncio expects.
+
+        async_schedule_reload is a callback that creates its own task and
+        returns None. Wrapping that in async_create_task raised TypeError
+        inside the coordinator listener, and async_update_listeners has no
+        per-listener guard, so the reload never happened.
+        """
+        hass, entry, coordinator, listeners = self.strict_watch({"pack_slots": [2, 3]})
+
+        coordinator.data = {"pack_slots": [2, 3, 4]}
+        listeners[0]()
+        listeners[0]()
+
+        hass.config_entries.async_schedule_reload.assert_called_once_with(
+            entry.entry_id
+        )
+        hass.async_create_task.assert_not_called()
 
 
 if __name__ == "__main__":
