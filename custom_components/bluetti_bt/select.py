@@ -183,7 +183,11 @@ class BluettiSelect(CoordinatorEntity, SelectEntity):
             return
 
         self._set_available()
-        self.current_option = response_data.name
+        # Assigning current_option itself would work, because Home Assistant
+        # builds it as a cached property, but it leaves the backing
+        # _attr_current_option unset and only lands by coincidence in the
+        # property's cache slot.
+        self._attr_current_option = response_data.name
         self.async_write_ha_state()
 
     async def async_select_option(self, option: str) -> None:

@@ -176,6 +176,16 @@ class TestSelectWrite(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual("PV_PRIORITY", select.current_option)
 
+    def test_device_value_is_published_as_the_state(self):
+        """Home Assistant publishes state, and it is None unless the option
+        reached the attribute SelectEntity.state reads."""
+        select = make_select()
+        select.coordinator.data = {"ctrl_ups_mode": UpsMode.PV_PRIORITY}
+
+        select._handle_coordinator_update()
+
+        self.assertEqual("PV_PRIORITY", select.state)
+
     async def test_failed_write_leaves_the_entity_on_the_device_value(self):
         select = make_select(
             write_result=result(
