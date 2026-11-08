@@ -5,7 +5,7 @@ import asyncio
 import re
 import logging
 from typing import List
-from homeassistant.config_entries import ConfigEntry
+from homeassistant.config_entries import ConfigEntry, ConfigEntryError
 from homeassistant.const import Platform
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity import DeviceInfo
@@ -97,10 +97,24 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR] = coordinator
 
+    # A station whose device type the library does not know fails every poll
+    # forever, so it ends the entry here instead. This is a ConfigEntryError
+    # rather than an UpdateFailed from the coordinator because Home Assistant
+    # only re-raises a ConfigEntryError out of the refresh that runs during
+    # setup: on a scheduled poll it is swallowed and every cycle is simply
+    # marked failed. It is raised after the coordinator has been stored so that
+    # the teardown callbacks above run, and they drop the entry data again.
+    if coordinator.bluetti_device is None:
+        raise ConfigEntryError(
+            f"Bluetti device type {config.dev_type} is not supported"
+        )
+
     # A failed first poll raises ConfigEntryNotReady, which makes Home
-    # Assistant retry the whole setup with its own backoff. The teardown above
-    # has already closed the connection and cancelled the pending retry timer
-    # by then, so nothing is left running between attempts.
+    # Assistant retry the whole setup with its own backoff, while the
+    # unsupported device type above raises ConfigEntryError and leaves the entry
+    # failed without retrying. The teardown above has already closed the
+    # connection and cancelled the pending retry timer by then, so nothing is
+    # left running between attempts.
     await coordinator.async_config_entry_first_refresh()
 
     # Options are written to the entry by the options flow; apply them to the

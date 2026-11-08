@@ -139,8 +139,8 @@ def watch_pack_slots(
             sorted(applied),
             sorted(current),
         )
-        hass.async_create_task(
-            hass.config_entries.async_schedule_reload(entry.entry_id)
-        )
+        # async_schedule_reload is a callback: it creates the reload task itself
+        # and returns None, so wrapping its result in a task raises TypeError.
+        hass.config_entries.async_schedule_reload(entry.entry_id)
 
     entry.async_on_unload(coordinator.async_add_listener(_check_slots))

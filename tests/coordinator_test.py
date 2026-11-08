@@ -18,6 +18,11 @@ from bleak_retry_connector import (
     BleakOutOfConnectionSlotsError,
 )
 
+from homeassistant.helpers.update_coordinator import (
+    DataUpdateCoordinator,
+    UpdateFailed,
+)
+
 from custom_components.bluetti_bt.coordinator import (
     FIRST_REFRESH_MAX_ATTEMPTS,
     OFFLINE_RETRY_DELAYS,
@@ -69,6 +74,9 @@ def make_coordinator(pack_poll_interval: int = 2) -> PollingCoordinator:
     coordinator._pack_num = None
     coordinator._pack_retries = 0
     coordinator._failed_reads = 0
+    # Normally set by DataUpdateCoordinator.__init__ / __init__ of ours.
+    coordinator.last_update_success = True
+    coordinator.consecutive_failures = 0
     coordinator._pack_prefixes = tuple(
         f"pack_{slot}_" for slot in range(1, coordinator.bluetti_device.max_packs + 1)
     )
@@ -1059,23 +1067,37 @@ class TestFailedReads(unittest.IsolatedAsyncioTestCase):
         coordinator.reader = Mock(read=AsyncMock(side_effect=cycles))
         return coordinator
 
+    async def poll_fails(self, coordinator) -> None:
+        """Run one poll and assert Home Assistant is told it failed."""
+        with self.assertRaises(UpdateFailed):
+            await coordinator._async_update_data()
+
     async def test_one_quiet_cycle_leaves_the_connection_alone(self):
         """A busy station resyncs its own pipeline over the live link."""
         coordinator = self.make_coordinator([None])
 
-        self.assertIsNone(await coordinator._async_update_data())
+        await self.poll_fails(coordinator)
 
         self.assertFalse(coordinator.disconnected)
         self.assertEqual(1, coordinator._failed_reads)
         # The reader already logged why the read failed.
         coordinator.logger.warning.assert_not_called()
 
+    async def test_a_quiet_cycle_reports_a_failed_cycle(self):
+        """A missed read is a failed cycle, not a successful empty one."""
+        coordinator = self.make_coordinator([None, None])
+
+        await self.poll_fails(coordinator)
+        self.assertEqual(1, coordinator.consecutive_failures)
+        await self.poll_fails(coordinator)
+        self.assertEqual(2, coordinator.consecutive_failures)
+
     async def test_second_quiet_cycle_rebuilds_the_connection(self):
         """A half-dead link is not left to report the same error forever."""
         coordinator = self.make_coordinator([None, None])
 
-        await coordinator._async_update_data()
-        self.assertIsNone(await coordinator._async_update_data())
+        await self.poll_fails(coordinator)
+        await self.poll_fails(coordinator)
 
         self.assertTrue(coordinator.disconnected)
         self.assertEqual(0, coordinator._failed_reads)
@@ -1085,12 +1107,115 @@ class TestFailedReads(unittest.IsolatedAsyncioTestCase):
         """An isolated miss does not count towards a rebuild."""
         coordinator = self.make_coordinator([None, dict(self.STATION), None])
 
+        await self.poll_fails(coordinator)
         await coordinator._async_update_data()
-        await coordinator._async_update_data()
-        self.assertIsNone(await coordinator._async_update_data())
+        await self.poll_fails(coordinator)
 
         self.assertFalse(coordinator.disconnected)
         self.assertEqual(1, coordinator._failed_reads)
+
+    async def test_a_good_cycle_clears_the_failed_cycle_count(self):
+        """Availability counts consecutive failures, not total ones."""
+        coordinator = self.make_coordinator([None, dict(self.STATION), None])
+
+        await self.poll_fails(coordinator)
+        await coordinator._async_update_data()
+        self.assertEqual(0, coordinator.consecutive_failures)
+        await self.poll_fails(coordinator)
+        self.assertEqual(1, coordinator.consecutive_failures)
+
+
+class TestFailedCycleNotification(unittest.IsolatedAsyncioTestCase):
+    """Every failed cycle is reported to the entities, exactly once.
+
+    The entities' availability is a debounce over the coordinator's failed
+    cycles, which only works while they keep being notified. Home Assistant
+    stops notifying once last_update_success is already False, so the
+    coordinator supplies the notification itself. These runs use Home
+    Assistant's real refresh and real listener dispatch: async_update_listeners
+    is deliberately not mocked, or the tests pass for the wrong reason.
+    """
+
+    STATION = {"battery_soc": 55}
+
+    def make_live_coordinator(self, cycles: list[dict | None]):
+        """A coordinator carrying Home Assistant's real listener machinery."""
+        coordinator = make_coordinator(0)
+        DataUpdateCoordinator.__init__(
+            coordinator,
+            coordinator.hass,
+            logging.getLogger("bluetti_bt.test"),
+            config_entry=None,
+            name="AC300",
+            update_interval=None,
+        )
+        coordinator.hass.is_stopping = False
+        coordinator.hass.data = {}
+        coordinator.logger = Mock(spec=logging.Logger)
+        coordinator._async_get_client = AsyncMock(return_value=Mock())
+        coordinator.reader = Mock(read=AsyncMock(side_effect=cycles))
+        return coordinator
+
+    async def run_cycle(self, coordinator) -> int:
+        """Run one refresh and report how many times the entities were told."""
+        notifications = []
+        coordinator.async_add_listener(lambda: notifications.append(None))
+        await coordinator._async_refresh()
+        # The notification the coordinator defers runs in the next loop pass.
+        await asyncio.sleep(0)
+        return len(notifications)
+
+    async def test_every_failed_cycle_notifies_the_entities(self):
+        """An outage is six notifications, not the one Home Assistant sends."""
+        coordinator = self.make_live_coordinator(
+            [None, None, None, None, None, None, dict(self.STATION)]
+        )
+
+        counts = [await self.run_cycle(coordinator) for _ in range(7)]
+
+        self.assertEqual([1, 1, 1, 1, 1, 1, 1], counts)
+
+    async def test_the_failed_cycles_are_counted(self):
+        """The count the debounce reads is the one the entities need."""
+        coordinator = self.make_live_coordinator(
+            [None, None, None, None, None, dict(self.STATION)]
+        )
+
+        seen = []
+        for _ in range(6):
+            await self.run_cycle(coordinator)
+            seen.append(coordinator.consecutive_failures)
+
+        self.assertEqual([1, 2, 3, 4, 5, 0], seen)
+
+    async def test_a_raising_listener_does_not_mask_the_failure(self):
+        """A listener blowing up must not be filed as the reason for the cycle.
+
+        async_update_listeners has no per-listener guard, so a notification
+        made from inside the refresh would replace the UpdateFailed in flight
+        and Home Assistant would log an unexpected exception instead of
+        recording a failed cycle.
+        """
+        coordinator = self.make_live_coordinator([None, None])
+        boom = ValueError("listener")
+        failures = []
+        coordinator.hass.loop.set_exception_handler(
+            lambda _loop, context: failures.append(context["exception"])
+        )
+
+        await coordinator._async_refresh()
+        await asyncio.sleep(0)
+
+        # Home Assistant sent the notification about the transition itself.
+        # From here on it is the coordinator's to supply, and the entities are
+        # the ones that blow up.
+        coordinator.async_add_listener(Mock(side_effect=boom))
+
+        await coordinator._async_refresh()
+        await asyncio.sleep(0)
+
+        self.assertIsInstance(coordinator.last_exception, UpdateFailed)
+        self.assertEqual([boom], failures)
 
 
 if __name__ == "__main__":
