@@ -1,2 +1,23 @@
-homeassistant
-bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment
+# Pinned to the Home Assistant release this integration is developed and tested
+# against. An unpinned homeassistant lets CI install a newer core than anyone
+# runs locally, which changes behaviour under test. Bump deliberately, and
+# re-check the aiousbwatcher/pyserial pins against the new release's
+# homeassistant/package_constraints.txt and component manifests.
+homeassistant==2026.2.3
+# Pinned to a commit, not to the ha-deployment branch, and to the same commit as
+# the requirement in custom_components/bluetti_bt/manifest.json. The branch moves
+# independently of this repo, so a branch pin lets one integration version build
+# against different library code on different days: CI can go red with no change
+# here, and a fresh install can pick up code nobody has tested. Bump both pins
+# together to a commit on ha-deployment when the library changes.
+bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@34e0ecfa7b4883d3316df74ec1eebe32ff32a4f2
+
+# Dependencies that Home Assistant loads at runtime instead of declaring in its
+# wheel metadata, so a clean `pip install homeassistant` does not pull them in.
+# homeassistant.components.usb -- reached from config_flow.py via
+# homeassistant.components.bluetooth -- imports both at module scope and raises
+# ModuleNotFoundError without them, which drops the two config_flow test modules
+# out of the run (163 tests instead of 196). They were only ever present on dev
+# machines by accident, so CI was the first place the gap showed.
+aiousbwatcher==1.1.1
+pyserial==3.5

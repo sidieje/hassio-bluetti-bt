@@ -83,7 +83,7 @@
         "name": "AC Output Mode"
       },
       "ac_output_on": {
-        "name": "AC Output eingeschaltet"
+        "name": "AC Output on"
       },
       "ac_output_current": {
         "name": "AC Output Current"
@@ -416,7 +416,7 @@
       "ctrl_led_mode": {
         "name": "LED Mode"
       },
-       "ctrl_ups_mode": {
+      "ctrl_ups_mode": {
         "name": "UPS Mode"
       }
     },

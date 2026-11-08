@@ -22,6 +22,23 @@
       "no_unconfigured_devices": "Keine Geräte gefunden"
     }
   },
+  "exceptions": {
+    "invalid_option": {
+      "message": "{option} ist keine gültige Option für {field}."
+    },
+    "select_write_unreachable": {
+      "message": "Bluetti konnte das Gerät zum Ändern von {field} nicht erreichen."
+    },
+    "select_write_rejected": {
+      "message": "Das Bluetti-Gerät hat {option} für {field} nicht übernommen."
+    },
+    "select_write_unconfirmed": {
+      "message": "Das Bluetti-Gerät hat {field} nicht bestätigt; der Wert erscheint möglicherweise erst beim nächsten Auslesen."
+    },
+    "select_write_mismatch": {
+      "message": "Das Bluetti-Gerät meldet {field}={reported}, nicht {option}."
+    }
+  },
   "options": {
     "step": {
       "init": {
