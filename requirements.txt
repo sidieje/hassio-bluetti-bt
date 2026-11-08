@@ -4,7 +4,13 @@
 # re-check the aiousbwatcher/pyserial pins against the new release's
 # homeassistant/package_constraints.txt and component manifests.
 homeassistant==2026.2.3
-bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment
+# Pinned to a commit, not to the ha-deployment branch, and to the same commit as
+# the requirement in custom_components/bluetti_bt/manifest.json. The branch moves
+# independently of this repo, so a branch pin lets one integration version build
+# against different library code on different days: CI can go red with no change
+# here, and a fresh install can pick up code nobody has tested. Bump both pins
+# together to a commit on ha-deployment when the library changes.
+bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@34e0ecfa7b4883d3316df74ec1eebe32ff32a4f2
 
 # Dependencies that Home Assistant loads at runtime instead of declaring in its
 # wheel metadata, so a clean `pip install homeassistant` does not pull them in.
