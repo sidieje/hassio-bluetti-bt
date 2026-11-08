@@ -1,2 +1,6 @@
-homeassistant
+# Pinned to the Home Assistant release this integration is developed and tested
+# against. An unpinned homeassistant lets CI install a newer core than anyone
+# runs locally, which changes behaviour under test (and on Python 3.15 omits a
+# bluetooth dependency, so whole test modules fail to import). Bump deliberately.
+homeassistant==2026.2.3
 bluetti-bt-lib @ git+https://github.com/sidieje/bluetti-bt-lib.git@ha-deployment
