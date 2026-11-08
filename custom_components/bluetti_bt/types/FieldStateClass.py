@@ -3,6 +3,13 @@ from homeassistant.components.sensor import SensorStateClass
 from bluetti_bt_lib import FieldName
 
 
+# Every field the station measures is listed here as MEASUREMENT, and every
+# field in FIELD_DEVICE_CLASS appears here too, with one deliberate exception:
+# REVERSE_CHARGING_TOP_UP_POWER is a threshold the user sets in watts for the
+# station to pass through, not a reading the station reports, so it keeps its
+# power device class but has no state class. Marking it MEASUREMENT would pull
+# a configured setting into long-term statistics and graph it as if it were a
+# live power reading.
 FIELD_STATE_CLASS: Dict[FieldName, SensorStateClass] = {
     FieldName.AC_INPUT_CURRENT: SensorStateClass.MEASUREMENT,
     FieldName.AC_INPUT_FREQUENCY: SensorStateClass.MEASUREMENT,
