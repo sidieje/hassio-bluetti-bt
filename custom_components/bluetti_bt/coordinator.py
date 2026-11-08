@@ -5,7 +5,7 @@ import asyncio
 from datetime import datetime, timedelta
 import logging
 from time import monotonic
-from typing import Any
+from typing import Any, NoReturn
 from bleak import BleakClient, BleakScanner
 from bleak.exc import BleakBluetoothNotAvailableError, BleakError
 from bleak_retry_connector import (
@@ -16,7 +16,7 @@ from bleak_retry_connector import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant
 from homeassistant.helpers.event import async_call_later
-from homeassistant.helpers.update_coordinator import DataUpdateCoordinator
+from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from bluetti_bt_lib import (
     BluettiDevice,
     DeviceReader,
@@ -44,10 +44,14 @@ STARTUP_GRACE_KEY = "startup_grace_until"
 # Home Assistant waits for a config entry to finish setting up, and bleak
 # spends about 20s per connection attempt plus its own backoffs, so the
 # configured attempt count can hold up bootstrap for minutes on a tower that
-# is unreachable at startup. Home Assistant retries a failed setup on its own
-# and the offline backoff covers a device that is really gone, so the refresh
-# that runs during setup does not need to try hard.
-FIRST_REFRESH_MAX_ATTEMPTS = 2
+# is unreachable at startup. Cutting the setup refresh down to a couple of
+# attempts was counterproductive though: it made the first refresh fail more
+# often, and every failure is now a ConfigEntryNotReady that Home Assistant
+# retries on its own backoff of 5, 10, 20, 40 and 80s, which costs far more
+# time than the attempts it saved. The setup refresh therefore gets the same
+# number of attempts as the default max_retries, and only a user who raised
+# max_retries above it is trimmed back here.
+FIRST_REFRESH_MAX_ATTEMPTS = 5
 
 # A pack walk that answers fewer packs than the station reports is retried on
 # the following cycles before its readings are used anyway.
@@ -177,6 +181,14 @@ class PollingCoordinator(DataUpdateCoordinator):
         self._pack_retries = 0
         self._failed_reads = 0
 
+        # Consecutive failed poll cycles, which the entities read to decide when
+        # to go unavailable. It is counted here rather than by the entities
+        # themselves because Home Assistant stops notifying listeners while a
+        # refresh keeps failing. Initialised before the unknown device type
+        # returns below: available() is evaluated as soon as an entity writes
+        # its state, which can happen before the first poll has finished.
+        self.consecutive_failures = 0
+
         if self.bluetti_device is None:
             self.logger.error("Device is unknown type: %s", config.name)
             return
@@ -226,7 +238,8 @@ class PollingCoordinator(DataUpdateCoordinator):
         if device is None:
             self._mark_offline(
                 f"{mac_loggable(self.config.address)} is not advertising: it is "
-                "probably powered off, asleep or out of range. Polling will retry."
+                f"probably powered off, asleep or out of range. "
+                f"{self._retry_advice()}"
             )
             return None
 
@@ -313,6 +326,22 @@ class PollingCoordinator(DataUpdateCoordinator):
         """Whether an offline report is still too early to warn about."""
         return not self._ever_connected and monotonic() < self._startup_grace_until
 
+    def _retry_advice(self) -> str:
+        """What is going to be retried, on one line.
+
+        Telling the user that polling will retry is wrong for the refresh that
+        runs while the entry is being set up: that failure ends setup with
+        ConfigEntryNotReady, and Home Assistant retries the whole entry on its
+        own backoff rather than the polling cycle doing anything.
+        """
+        if self._setup_refresh:
+            return (
+                "Setup will fail and Home Assistant will retry it with its own "
+                "backoff."
+            )
+
+        return "Polling will retry."
+
     def _offline_reason(self, err: BaseException) -> str:
         """What a failed connection most likely means, on one line.
 
@@ -329,10 +358,13 @@ class PollingCoordinator(DataUpdateCoordinator):
                 "the proxy or adapter is out of connection slots or the device "
                 "is no longer reachable; add additional proxies "
                 "(https://esphome.io/projects/?type=bluetooth) near this device. "
-                "Polling will retry."
+                f"{self._retry_advice()}"
             )
 
-        return "it is probably powered off, asleep or out of range. Polling will retry."
+        return (
+            "it is probably powered off, asleep or out of range. "
+            f"{self._retry_advice()}"
+        )
 
     def _hide_address(self, err: BaseException) -> str:
         """bleak's text with this device's address masked out.
@@ -713,6 +745,31 @@ class PollingCoordinator(DataUpdateCoordinator):
         # offline handling if it really has gone.
         self.disconnected = True
 
+    def _async_fail_cycle(self, reason: str) -> NoReturn:
+        """Count a failed poll cycle and report the refresh as failed.
+
+        Raising UpdateFailed is how a coordinator reports a failed refresh, and
+        this integration has to do it rather than returning None: Home Assistant
+        only leaves self.data alone when the update raises, so a returned None
+        threw the last good readings away and then logged a recovery that had
+        not happened.
+
+        The cycle is counted here rather than left to the entities, because Home
+        Assistant suppresses the notification on every cycle after the first
+        failure. That notification is deferred into its own loop callback:
+        async_update_listeners has no per listener guard, so running it on the
+        way out would let a listener that raises replace the UpdateFailed that
+        is being reported.
+        """
+        self.consecutive_failures += 1
+
+        if not self.last_update_success:
+            # The first failing cycle is still notified by Home Assistant
+            # itself, so only the cycles it goes on to suppress need one.
+            self.hass.loop.call_soon(self.async_update_listeners)
+
+        raise UpdateFailed(reason)
+
     async def _async_update_data(self):
         """Run one poll cycle, and note that the setup refresh has happened."""
         try:
@@ -721,10 +778,11 @@ class PollingCoordinator(DataUpdateCoordinator):
             self._setup_refresh = False
 
     async def _async_poll(self):
-        """Fetch data from API endpoint.
+        """Read one cycle of registers from the station.
 
-        This is the place to pre-process the data to lookup tables
-        so entities can quickly look up their data.
+        Pack values from the last complete walk are merged back in on the
+        cycles that did not walk the packs, so the pack entities keep their
+        readings between walks.
         """
 
         if self.bluetti_device is None:
@@ -732,23 +790,31 @@ class PollingCoordinator(DataUpdateCoordinator):
                 "Reader not initialized - device type may be unsupported: %s",
                 self.config.name,
             )
-            self.last_update_success = False
-            return None
+            # UpdateFailed rather than ConfigEntryError: Home Assistant only
+            # re-raises a ConfigEntryError out of the refresh that ran during
+            # setup, so on a scheduled poll it would be swallowed and every
+            # cycle would simply be marked failed. An unsupported type is
+            # refused in setup instead, where it ends the entry once.
+            self._async_fail_cycle("Device type is unsupported")
 
         client = await self._async_get_client()
 
         if client is None or self.reader is None:
-            self.last_update_success = False
-            return None
+            self._async_fail_cycle(
+                f"No bluetooth connection to {mac_loggable(self.config.address)}"
+            )
 
         include_packs = self._packs_due()
         data = await self.reader.read(include_packs=include_packs)
 
         if data is None:
             self._note_failed_read()
-            return None
+            self._async_fail_cycle(
+                f"{mac_loggable(self.config.address)} did not answer this poll"
+            )
 
         self._failed_reads = 0
+        self.consecutive_failures = 0
         if include_packs:
             if self._walk_complete(data) or self._pack_retries >= PACK_WALK_RETRIES:
                 self._pack_retries = 0

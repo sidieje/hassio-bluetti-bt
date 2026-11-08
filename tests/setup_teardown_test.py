@@ -7,7 +7,7 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock, patch
 
 from homeassistant.config_entries import ConfigEntryNotReady, ConfigEntryState
-from homeassistant.exceptions import HomeAssistantError
+from homeassistant.exceptions import ConfigEntryError, HomeAssistantError
 
 from custom_components.bluetti_bt import (
     DATA_COORDINATOR,
@@ -67,9 +67,16 @@ def make_hass() -> SimpleNamespace:
 
 
 def make_coordinator_class(
-    first_refresh: Exception | None = None, order: list | None = None
+    first_refresh: Exception | None = None,
+    order: list | None = None,
+    bluetti_device: object = "supported",
 ):
-    """Build a PollingCoordinator stand-in that passes isinstance checks."""
+    """Build a PollingCoordinator stand-in that passes isinstance checks.
+
+    bluetti_device is anything truthy by default, because setup refuses an
+    entry whose device type the library does not recognise. Pass None to get
+    that refusal.
+    """
 
     class FakeCoordinator(PollingCoordinator):
         instances: list = []
@@ -80,6 +87,12 @@ def make_coordinator_class(
             self.config_entry = config_entry
             self.logger = Mock(spec=logging.Logger)
             self.connection_lock = asyncio.Lock()
+            # The real coordinator builds the device in its constructor, so
+            # setup can refuse an unsupported type before it ever polls.
+            self.bluetti_device = bluetti_device
+            self.consecutive_failures = 0
+            self.last_update_success = True
+            self.data = None
             self.async_config_entry_first_refresh = AsyncMock(side_effect=first_refresh)
             self.apply_options = AsyncMock()
 
@@ -119,6 +132,30 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
 
         coordinator.async_unload.assert_awaited_once()
         self.assertNotIn(entry.entry_id, hass.data.get(DOMAIN, {}))
+
+    async def test_unsupported_device_type_refuses_the_entry(self):
+        """A type the library cannot build is fatal, not retried forever.
+
+        ConfigEntryError puts the entry in SETUP_ERROR with the reason shown
+        in the UI; ConfigEntryNotReady would retry on a backoff that can
+        never succeed.
+        """
+        hass = make_hass()
+        entry = FakeEntry()
+        entry.data = {**entry.data, "type": "NOT_A_REAL_TYPE"}
+        coordinator_class = make_coordinator_class(bluetti_device=None)
+
+        with patch("custom_components.bluetti_bt.PollingCoordinator", coordinator_class):
+            with self.assertRaises(ConfigEntryError):
+                await async_setup_entry(hass, entry)
+
+            coordinator = coordinator_class.instances[0]
+            await run_on_unload(entry)
+
+        self.assertNotIn(entry.entry_id, hass.data[DOMAIN])
+        coordinator.async_unload.assert_awaited_once()
+        coordinator.async_config_entry_first_refresh.assert_not_awaited()
+        hass.config_entries.async_forward_entry_setups.assert_not_awaited()
 
     async def test_teardown_registered_before_first_refresh(self):
         """Teardown must exist before the first poll can fail."""
@@ -274,8 +311,15 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
         client.disconnect.assert_awaited_once()
         reader.disconnect.assert_awaited_once()
 
-    async def test_offline_setup_arms_a_timer_not_a_task(self):
-        """An offline entry must not leave a task for bootstrap to wait on."""
+    async def test_offline_setup_arms_nothing_that_survives_the_retry(self):
+        """An unreachable device retries the whole entry, not a private task.
+
+        A failed first refresh used to load the entry anyway and leave a
+        private retry timer behind. Home Assistant's own ConfigEntryNotReady
+        backoff now covers the retry, so setup must hand back cleanly: no
+        task for bootstrap to wait on, and no coordinator left in hass.data
+        once the on_unload callbacks it runs have finished.
+        """
         hass = make_hass()
         entry = FakeEntry()
         # The library wants a name with the serial appended, like the devices
@@ -287,24 +331,26 @@ class TestSetupTeardown(unittest.IsolatedAsyncioTestCase):
             "custom_components.bluetti_bt.coordinator.BleakScanner.find_device_by_address",
             new=AsyncMock(return_value=None),
         ):
-            # The entry still loads when the device is unreachable, which is
-            # what the offline retry exists for.
-            self.assertTrue(await async_setup_entry(hass, entry))
+            with self.assertRaises(ConfigEntryNotReady):
+                await async_setup_entry(hass, entry)
 
         coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
+        # The failed attempt still recorded why, and armed its retry timer.
         self.assertTrue(coordinator._offline)
         self.assertIsNone(coordinator.data)
         self.assertIsNotNone(coordinator._retry_unsub)
 
         # Home Assistant's bootstrap waits for every task created during the
-        # setup phase, so an offline entry may only arm a retry timer.
+        # setup phase, so a failed setup may only have armed a timer.
         self.assertEqual(set(), asyncio.all_tasks() - before)
 
+        # Home Assistant runs the on_unload callbacks when setup fails.
         await run_on_unload(entry)
 
         self.assertIsNone(coordinator._retry_unsub)
         self.assertEqual(set(), asyncio.all_tasks() - before)
+        self.assertNotIn(entry.entry_id, hass.data[DOMAIN])
 
 
 def make_real_coordinator() -> PollingCoordinator:
