@@ -8,7 +8,7 @@
       },
       "device_type": {
         "title": "Gerät auswählen",
-        "description": "Home Assistant konnte diese Station nicht erkennen. Wählen Sie das Modell aus, um fortzufahren.",
+        "description": "Home Assistant konnte diese Station nicht erkennen. Wählen Sie das Modell aus, um fortzufahren.\n\nEin gewähltes Modell ist mit dieser Station nicht getestet: Sie kann nur teilweise oder gar nicht funktionieren, und die Schalter schreiben in die Register des gewählten Modells. Nutzung auf eigenes Risiko.",
         "data": {
           "type": "Modell",
           "use_encryption": "Bluetooth-Verschlüsselung"
