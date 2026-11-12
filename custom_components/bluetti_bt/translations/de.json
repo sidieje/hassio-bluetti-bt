@@ -82,12 +82,6 @@
       "ac_output_mode": {
         "name": "AC Ausgang Modus"
       },
-      "ac_output_on": {
-        "name": "AC Ausgang eingeschaltet"
-      },
-      "ac_output_current": {
-        "name": "AC Ausgang Stromstärke"
-      },
       "ac_output_power": {
         "name": "AC Ausgang Leistung"
       },
@@ -123,9 +117,6 @@
       },
       "b_v": {
         "name": "Batteriespannung"
-      },
-      "b_c": {
-        "name": "Batteriestrom"
       },
       "b_io_p": {
         "name": "Batterie I/O Leistung"
@@ -184,12 +175,6 @@
       "ctrl_reverse_charging_mode": {
         "name": "Rücklademodus"
       },
-      "ctrl_silent_charging": {
-        "name": "Stilles Laden"
-      },
-      "ctrl_system_on_off": {
-        "name": "System An/Aus"
-      },
       "dc_input_current": {
         "name": "DC Eingang Stromstärke"
       },
@@ -207,9 +192,6 @@
       },
       "dc_input_voltage": {
         "name": "DC Eingang Spannung"
-      },
-      "dc_output_on": {
-        "name": "DC Ausgang eingeschaltet"
       },
       "dc_output_power": {
         "name": "DC Ausgang Leistung"
@@ -279,9 +261,6 @@
       },
       "power_generation": {
         "name": "Erzeugter Strom"
-      },
-      "power_lifting_on": {
-        "name": "Power Lifting eingeschaltet"
       },
       "pv_s1_current": {
         "name": "PV String 1 Stromstärke"
@@ -356,9 +335,6 @@
     "switch": {
       "ctrl_ac": {
         "name": "AC Ausgang"
-      },
-      "ctrl_charging_mode": {
-        "name": "Lademodus"
       },
       "ctrl_dc": {
         "name": "DC Ausgang"
@@ -437,9 +413,6 @@
     "binary_sensor": {
       "ctrl_ac": {
         "name": "AC Ausgang"
-      },
-      "ctrl_charging_mode": {
-        "name": "Lademodus"
       },
       "ctrl_dc": {
         "name": "DC Ausgang"

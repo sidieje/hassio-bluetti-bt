@@ -73,7 +73,6 @@ async def async_setup_entry(
                 coordinator,
                 device_info,
                 field,
-                use_encryption=config.use_encryption,
                 category=category,
                 logger=logger,
             )
@@ -92,7 +91,6 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         coordinator: PollingCoordinator,
         device_info: DeviceInfo,
         field: DeviceField,
-        use_encryption: bool = False,
         category: EntityCategory | None = None,
         logger: logging.Logger = logging.getLogger(),
     ):
@@ -106,7 +104,6 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         self._address = address
         self._field = field
         self._response_key = field.name
-        self._use_encryption = use_encryption
         self._unavailable_counter = 0
 
         self._attr_has_entity_name = True

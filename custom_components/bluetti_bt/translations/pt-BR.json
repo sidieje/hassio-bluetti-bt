@@ -60,8 +60,6 @@
       "ac_input_voltage": { "name": "Tensão de entrada CA" },
       "ac_output_frequency": { "name": "Frequência de saída CA" },
       "ac_output_mode": { "name": "Modo de saída CA" },
-      "ac_output_on": { "name": "Saída CA ligada" },
-      "ac_output_current": { "name": "Corrente de saída CA" },
       "ac_output_power": { "name": "Potência de saída CA" },
       "ac_output_voltage": { "name": "Tensão de saída CA" },
 
@@ -75,7 +73,6 @@
       "ac_p3_power": { "name": "Potência CA Fase 3" },
       "ac_p3_voltage": { "name": "Tensão CA Fase 3" },
       "b_v": { "name": "Tensão da bateria" },
-      "b_c": { "name": "Corrente da bateria" },
       "b_io_p": { "name": "Potência de I/O da bateria" },
       "b_alt_v": { "name": "Tensão da bateria do alternador" },
       "b_alt_c": { "name": "Corrente da bateria do alternador" },
@@ -86,7 +83,6 @@
       "dc_input_current": { "name": "Corrente de entrada CC" },
       "dc_input_power": { "name": "Potência de entrada CC" },
       "dc_input_voltage": { "name": "Tensão de entrada CC" },
-      "dc_output_on": { "name": "Saída CC ligada" },
       "dc_output_power": { "name": "Potência de saída CC" },
       "dc_2_o_v": { "name": "Tensão de saída CC 2" },
       "dc_2_o_c": { "name": "Corrente de saída CC 2" },
@@ -114,7 +110,6 @@
       "internal_dc_input_voltage": { "name": "Tensão de entrada CC interna" },
 
       "power_generation": { "name": "Energia gerada" },
-      "power_lifting_on": { "name": "Power Lifting ligado" },
 
       "pv_s1_current": { "name": "Corrente do string FV 1" },
       "pv_s1_power": { "name": "Potência do string FV 1" },
@@ -142,9 +137,7 @@
       "ctrl_eco_time_mode_dc": { "name": "Temporizador ECO CC" },
       "ctrl_led_mode": { "name": "Modo do LED" },
       "ctrl_reverse_charging_mode": { "name": "Modo de carregamento reverso" },
-      "ctrl_silent_charging": { "name": "Carregamento silencioso" },
       "ctrl_split_phase_mode": { "name": "Modo de fase dividida" },
-      "ctrl_system_on_off": { "name": "Ligar/desligar sistema" },
       "ctrl_ups_mode": { "name": "Modo UPS" },
 
       "grid_frequency_max_value": { "name": "Frequência máxima da rede" },
@@ -167,7 +160,6 @@
     },
     "switch": {
       "ctrl_ac": { "name": "Saída CA" },
-      "ctrl_charging_mode": { "name": "Modo de carregamento" },
       "ctrl_dc": { "name": "Saída CC" },
       "ctrl_eco": { "name": "Modo ECO" },
       "ctrl_eco_ac": { "name": "Modo ECO CA" },
@@ -199,7 +191,6 @@
     "binary_sensor": {
       "ac_output_on": { "name": "Saída CA" },
       "ctrl_ac": { "name": "Saída CA" },
-      "ctrl_charging_mode": { "name": "Modo de carregamento" },
       "ctrl_dc": { "name": "Saída CC" },
       "ctrl_eco": { "name": "Modo ECO" },
       "ctrl_eco_ac": { "name": "Modo ECO CA" },

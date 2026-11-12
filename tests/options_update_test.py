@@ -197,6 +197,25 @@ class TestEntryConfig(unittest.TestCase):
         self.assertEqual(15, config.pack_poll_interval)
         self.assertEqual(45, config.polling_timeout)
 
+    def test_entry_saved_before_the_encryption_flags_still_parses(self):
+        """An entry written before the encryption flags were introduced has
+        neither, and defaults to the plain channel rather than failing the
+        setup outright. Entries saved before v0.2.0 are still in the wild."""
+        entry = FakeEntry(options={})
+        del entry.data["use_encryption"]
+
+        self.assertFalse(entry_config(entry).use_encryption)
+
+    def test_entry_without_a_required_field_is_refused(self):
+        """The fields the setup error message names are the ones an entry
+        cannot be built without, and nothing else."""
+        for field in ("address", "name", "type"):
+            with self.subTest(field=field):
+                entry = FakeEntry(options={})
+                del entry.data[field]
+
+                self.assertIsNone(entry_config(entry))
+
 
 class TestUpdateListener(unittest.IsolatedAsyncioTestCase):
     """The entry's update listener reaches the running coordinator."""

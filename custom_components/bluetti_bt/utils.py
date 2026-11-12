@@ -69,7 +69,14 @@ def mac_loggable(mac: str) -> str:
 
 
 def unique_id_logable(unique_id: str) -> str:
-    """Remove parts of the unique id for logging."""
-    splitted = unique_id.split("_", maxsplit=1)
-    serial = splitted[0][:6]
-    return serial + "XXXXXXXXXX" + splitted[1]
+    """Remove parts of the unique id for logging.
+
+    The id is the device name, which is the type and serial run together, and
+    the field it belongs to, separated by the first underscore. The serial is
+    therefore in the first part, and only the field name is worth keeping.
+    partition() rather than split() so that an id without a separator masks
+    rather than raises, since this runs on the paths that log a problem.
+    """
+    device_part, _, field = unique_id.partition("_")
+
+    return device_part[:6] + "XXXXXXXXXX" + field
