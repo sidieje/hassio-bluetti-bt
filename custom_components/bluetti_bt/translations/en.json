@@ -82,12 +82,6 @@
       "ac_output_mode": {
         "name": "AC Output Mode"
       },
-      "ac_output_on": {
-        "name": "AC Output on"
-      },
-      "ac_output_current": {
-        "name": "AC Output Current"
-      },
       "ac_output_power": {
         "name": "AC Output Power"
       },
@@ -123,9 +117,6 @@
       },
       "b_v": {
         "name": "Battery Voltage"
-      },
-      "b_c": {
-        "name": "Battery Current"
       },
       "b_io_p": {
         "name": "Battery I/O Power"
@@ -184,12 +175,6 @@
       "ctrl_reverse_charging_mode": {
         "name": "Reverse Charging Mode"
       },
-      "ctrl_silent_charging": {
-        "name": "Silent Charging"
-      },
-      "ctrl_system_on_off": {
-        "name": "System On/Off"
-      },
       "dc_input_current": {
         "name": "DC Input Current"
       },
@@ -207,9 +192,6 @@
       },
       "dc_input_voltage": {
         "name": "DC Input Voltage"
-      },
-      "dc_output_on": {
-        "name": "DC Output on"
       },
       "dc_output_power": {
         "name": "DC Output Power"
@@ -279,9 +261,6 @@
       },
       "power_generation": {
         "name": "Generated Electricity"
-      },
-      "power_lifting_on": {
-        "name": "Power Lifting on"
       },
       "pv_s1_current": {
         "name": "PV String 1 Current"
@@ -356,9 +335,6 @@
     "switch": {
       "ctrl_ac": {
         "name": "AC Output"
-      },
-      "ctrl_charging_mode": {
-        "name": "Charging Mode"
       },
       "ctrl_dc": {
         "name": "DC Output"
@@ -437,9 +413,6 @@
     "binary_sensor": {
       "ctrl_ac": {
         "name": "AC Output"
-      },
-      "ctrl_charging_mode": {
-        "name": "Charging Mode"
       },
       "ctrl_dc": {
         "name": "DC Output"
