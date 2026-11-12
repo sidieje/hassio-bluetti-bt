@@ -29,10 +29,12 @@ CHARGER2 = {CONF_TYPE: "CHARGER2"}
 class OptionsFlowTestCase(unittest.IsolatedAsyncioTestCase):
     """Shared plumbing for the options flow tests."""
 
-    def make_flow(self, data):
+    def make_flow(self, data, options=None):
         """Create an options flow instance without initializing Home Assistant."""
         flow = object.__new__(OptionsFlowHandler)
-        entry = SimpleNamespace(data=data, entry_id="entry-1")
+        entry = SimpleNamespace(
+            data=data, options=dict(options or {}), entry_id="entry-1"
+        )
         flow.handler = "entry-1"
         flow.hass = SimpleNamespace(
             config_entries=SimpleNamespace(
@@ -99,7 +101,9 @@ class TestEncryptionOption(OptionsFlowTestCase):
 
     async def test_untouched_channel_does_not_restart_the_entry(self):
         """Saving the other options should not drop the connection."""
-        flow = self.make_flow({**AC300, CONF_USE_ENCRYPTION: True})
+        # Nothing in the form changes, pack polling included, or the entry
+        # would be reloaded for the right reason and say nothing about this one.
+        flow = self.make_flow({**AC300, CONF_USE_ENCRYPTION: True, **OPTIONS})
 
         await flow.async_step_init({**OPTIONS, CONF_USE_ENCRYPTION: True})
 
@@ -162,6 +166,66 @@ class TestPackPollingOption(OptionsFlowTestCase):
 
         created = flow.async_create_entry.call_args.kwargs["data"]
         self.assertEqual(created[CONF_PACK_POLL_INTERVAL], 0)
+
+
+class TestPackPollingReload(OptionsFlowTestCase):
+    """Test when saving the pack polling interval restarts the entry."""
+
+    async def save(self, flow, interval):
+        """Save the form and report whether the entry was asked to reload."""
+        await flow.async_step_init(
+            {
+                "polling_interval": 20,
+                "polling_timeout": 45,
+                "max_retries": 5,
+                CONF_PACK_POLL_INTERVAL: interval,
+                CONF_USE_ENCRYPTION: True,
+            }
+        )
+
+        return flow.hass.config_entries.async_schedule_reload.called
+
+    async def test_enabling_pack_polling_restarts_the_entry(self):
+        """While polling is off the pack entities are registered disabled and no
+        watcher is installed, so only a setup can turn them on."""
+        flow = self.make_flow(
+            {**AC300, CONF_USE_ENCRYPTION: True, CONF_PACK_POLL_INTERVAL: 0}
+        )
+
+        self.assertTrue(await self.save(flow, 15))
+
+    async def test_disabling_pack_polling_restarts_the_entry(self):
+        """The other direction has to give up the entities it registered."""
+        flow = self.make_flow(
+            {**AC300, CONF_USE_ENCRYPTION: True, CONF_PACK_POLL_INTERVAL: 15}
+        )
+
+        self.assertTrue(await self.save(flow, 0))
+
+    async def test_retuning_the_interval_does_not_restart_the_entry(self):
+        """The running coordinator picks a new interval up by itself."""
+        flow = self.make_flow(
+            {**AC300, CONF_USE_ENCRYPTION: True, CONF_PACK_POLL_INTERVAL: 15}
+        )
+
+        self.assertFalse(await self.save(flow, 30))
+
+    async def test_options_hold_the_interval_the_device_is_using(self):
+        """The saved options win over the entry data, so they are what the form
+        has to compare against."""
+        on = self.make_flow(
+            {**AC300, CONF_USE_ENCRYPTION: True, CONF_PACK_POLL_INTERVAL: 0},
+            options={CONF_PACK_POLL_INTERVAL: 15},
+        )
+
+        self.assertFalse(await self.save(on, 30))
+
+        off = self.make_flow(
+            {**AC300, CONF_USE_ENCRYPTION: True, CONF_PACK_POLL_INTERVAL: 15},
+            options={CONF_PACK_POLL_INTERVAL: 0},
+        )
+
+        self.assertTrue(await self.save(off, 30))
 
 
 class TestHasBatteryPacks(unittest.TestCase):

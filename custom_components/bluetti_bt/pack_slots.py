@@ -110,21 +110,50 @@ def watch_pack_slots(
     only shows up once the entry has been set up again. The change has to hold
     for two consecutive polls before it is acted on, which keeps a slot that
     flaps between two sets from reloading the entry over and over.
-    """
-    applied = occupied_slots(coordinator.data)
 
-    if applied is None:
-        return
+    The watcher is installed even when the station has not reported its slots
+    yet, because the entry is loaded while a station is offline and a first pack
+    walk that loses a pack reports no slots either. Bailing out on an unknown
+    baseline here would leave the watcher uninstalled for the rest of the run,
+    so the first reading that does name the slots becomes the baseline instead.
+    """
+    applied: set[int] | None = occupied_slots(coordinator.data)
+
+    device = getattr(coordinator, "bluetti_device", None)
+    max_packs = getattr(device, "max_packs", 0)
+    every_slot = set(range(1, max_packs + 1)) if isinstance(max_packs, int) else set()
 
     pending: set[int] | None = None
 
     @callback
     def _check_slots(_: Any = None) -> None:
-        nonlocal pending
+        nonlocal applied, pending
 
         current = occupied_slots(coordinator.data)
 
-        if current is None or current == applied:
+        if current is None:
+            pending = None
+            return
+
+        if applied is None:
+            # Setup had no baseline, so it registered every slot enabled. Adopt
+            # this reading, and reload once when that was the wrong guess so
+            # setup can register the empty slots disabled. It cannot loop: the
+            # reload gives setup a real baseline, so the next seed matches it.
+            applied = current
+            pending = None
+
+            if every_slot - current:
+                logger.info(
+                    "Station reports packs in slots %s, reloading to register "
+                    "the empty slots as disabled",
+                    sorted(current),
+                )
+                hass.config_entries.async_schedule_reload(entry.entry_id)
+
+            return
+
+        if current == applied:
             pending = None
             return
 

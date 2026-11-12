@@ -315,6 +315,12 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
         # The checkbox shows what was detected when the device was added, so a
         # device that answered on the plain channel is offered an unticked box.
         stored = bool(self.config_entry.data.get(CONF_USE_ENCRYPTION, False))
+        # Options win over the entry data, so the effective pack interval is the
+        # merged one. It has to be read here, before the update below overwrites
+        # the entry.
+        stored_pack_interval = OptionalDeviceConfig.from_dict(
+            {**self.config_entry.data, **self.config_entry.options}
+        ).pack_poll_interval
         has_packs = has_battery_packs(self.config_entry.data.get(CONF_TYPE))
 
         if user_input is not None:
@@ -338,10 +344,16 @@ class OptionsFlowHandler(config_entries.OptionsFlow):
                 data=data,
             )
 
-            if use_encryption != stored:
+            if use_encryption != stored or (config.pack_poll_interval > 0) != (
+                stored_pack_interval > 0
+            ):
                 # The channel is chosen while the entry is set up, so changing
-                # it needs a restart. The other options are applied to the
-                # running coordinator by the entry's update listener.
+                # it needs a restart. Switching pack polling between off and on
+                # needs one for the same reason: while it is off the pack
+                # entities are registered disabled, and only platform setup
+                # moves them into view and starts watching the slots. The other
+                # options are applied to the running coordinator by the entry's
+                # update listener.
                 self.hass.config_entries.async_schedule_reload(
                     self.config_entry.entry_id
                 )

@@ -7,6 +7,7 @@ to keep the entities of the empty ones out of the entity registry.
 import asyncio
 import logging
 import unittest
+from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
 from homeassistant.core import HomeAssistant
@@ -161,11 +162,14 @@ class TestApplyPackVisibility(unittest.TestCase):
 class TestWatchPackSlots(unittest.TestCase):
     """A slot change only reloads the entry once it has held for two polls."""
 
-    def watch(self, data):
+    def watch(self, data, max_packs: int = 4):
         hass = Mock()
         entry = Mock()
         coordinator = Mock()
         coordinator.data = data
+        # The watcher compares the reported slots against the slots the model
+        # has room for, so the device has to say how many it has.
+        coordinator.bluetti_device = SimpleNamespace(max_packs=max_packs)
 
         watch_pack_slots(hass, entry, coordinator, logging.getLogger())
 
@@ -182,10 +186,63 @@ class TestWatchPackSlots(unittest.TestCase):
 
         return hass, coordinator, [listener]
 
-    def test_no_watcher_without_pack_slots(self):
-        _, _, listeners = self.watch({"pack_voltage": 52.0})
+    def test_watcher_installed_without_a_baseline(self):
+        """An entry loaded offline, or on a first walk that lost a pack, has no
+        slots to compare against yet; the watcher still has to be listening."""
+        for data in (None, {}, {"pack_voltage": 52.0}):
+            with self.subTest(data=data):
+                _, _, listeners = self.watch(data)
 
-        self.assertEqual(listeners, [])
+                self.assertEqual(len(listeners), 1)
+
+    def test_first_reading_seeds_the_baseline(self):
+        """The first reading that names the slots becomes what was applied, so
+        the two-poll rule counts from it rather than from nothing."""
+        hass, coordinator, listeners = self.watch(None, max_packs=2)
+
+        coordinator.data = {"pack_slots": [1, 2]}
+        listeners[0]()
+
+        self.assertFalse(hass.config_entries.async_schedule_reload.called)
+
+        # Seeded, so a change now needs to hold for a second poll as usual.
+        coordinator.data = {"pack_slots": [1, 2, 3]}
+        listeners[0]()
+
+        self.assertFalse(hass.config_entries.async_schedule_reload.called)
+
+        listeners[0]()
+
+        self.assertTrue(hass.config_entries.async_schedule_reload.called)
+
+    def test_seed_reloads_when_slots_are_empty(self):
+        """Setup registered every slot enabled, so a station that leaves some
+        of them empty has to be set up again to register them disabled."""
+        hass, coordinator, listeners = self.watch(None, max_packs=4)
+
+        coordinator.data = {"pack_slots": [2, 3]}
+        listeners[0]()
+
+        self.assertTrue(hass.config_entries.async_schedule_reload.called)
+
+    def test_seed_does_not_reload_twice(self):
+        """The reload gives setup a real baseline, so the watcher installed by
+        the new setup never seeds and the entry is not reloaded again."""
+        hass, coordinator, listeners = self.watch(None, max_packs=4)
+
+        coordinator.data = {"pack_slots": [2, 3]}
+        listeners[0]()
+
+        self.assertTrue(hass.config_entries.async_schedule_reload.called)
+
+        # The same watcher keeps running until the reload replaces it; a later
+        # poll must not reload again just because the slots are still partial.
+        hass.config_entries.async_schedule_reload.reset_mock()
+
+        for _ in range(3):
+            listeners[0]()
+
+        self.assertFalse(hass.config_entries.async_schedule_reload.called)
 
     def test_reload_waits_for_the_change_to_hold(self):
         hass, coordinator, listeners = self.watch({"pack_slots": [2, 3]})
