@@ -33,13 +33,17 @@ async def async_setup_entry(
     """Setup sensor entities."""
 
     config = FullDeviceConfig.from_dict(entry.data)
+    if config is None:
+        logging.getLogger(__name__).error("Unable to parse Bluetti config entry")
+        return None
+
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
     logger = logging.getLogger(
         f"{__name__}.{mac_loggable(config.address).replace(':', '_')}"
     )
 
-    if config is None or not isinstance(coordinator, PollingCoordinator):
+    if not isinstance(coordinator, PollingCoordinator):
         logger.error("No coordinator found")
         return None
 
