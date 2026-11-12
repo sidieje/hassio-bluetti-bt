@@ -49,9 +49,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     if config is None:
         logging.getLogger(__name__).error(
-            "Failed to parse config entry data for '%s'. "
-            "This may happen when upgrading from v0.1.6 to v0.2.x "
-            "due to missing 'use_encryption' field.",
+            "Failed to parse config entry data for '%s': address, name and "
+            "type are required, and the encryption flags have to be booleans "
+            "where they are stored. The device has to be removed and added "
+            "again.",
             entry.title,
         )
         return False

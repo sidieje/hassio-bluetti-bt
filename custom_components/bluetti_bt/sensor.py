@@ -182,7 +182,6 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         device_class: str | None = None,
         state_class: str | None = None,
         category: EntityCategory | None = None,
-        options: list[str] | None = None,
         pack_num: int | None = None,
         registry_enabled: bool = True,
         logger: logging.Logger = logging.getLogger(),
@@ -190,7 +189,6 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         """Init sensor entity."""
         super().__init__(coordinator)
         self.coordinator = coordinator
-        self._pack_num = pack_num
         self._logger = logger
 
         self._attr_has_entity_name = True
@@ -233,7 +231,6 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
         self._attr_device_class = device_class
         self._attr_state_class = state_class
         self._attr_entity_category = category
-        self._options = options
 
     @property
     def available(self) -> bool:

@@ -146,7 +146,6 @@ class BluettiConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         _LOGGER.info("Initialize config flow")
         self._discovery_info: BluetoothServiceInfoBleak | None = None
-        self._discovered_devices: dict[str, BluetoothServiceInfoBleak] = {}
         self._encryption_assumed = False
 
     async def async_step_bluetooth(

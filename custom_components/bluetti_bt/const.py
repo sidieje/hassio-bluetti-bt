@@ -3,8 +3,6 @@
 DOMAIN = "bluetti_bt"
 MANUFACTURER = "Bluetti"
 
-CONF_OPTIONS = "options"
-
 DATA_COORDINATOR = "coordinator"
 
 # How many consecutive failed poll cycles an entity waits before it goes
