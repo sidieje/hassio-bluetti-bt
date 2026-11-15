@@ -94,9 +94,10 @@ class TestBluettiBinarySensorUpdate(unittest.TestCase):
 
         self.assert_unavailable_reported(sensor, "Invalid data type")
         sensor._logger.warning.assert_called_once_with(
-            "Invalid response data type from coordinator (binary_sensor.%s): %s",
+            "Invalid response data type from coordinator (binary_sensor.%s): %s has type %s",
             LOGABLE_ID,
             1,
+            type(1),
         )
 
     def test_true_reading_turns_the_sensor_on(self):

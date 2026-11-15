@@ -286,9 +286,10 @@ class TestBluettiNumberUpdate(unittest.TestCase):
 
         self.assert_unavailable_reported(number, "Invalid data type")
         number._logger.warning.assert_called_once_with(
-            "Invalid response data type from coordinator (number.%s): %s",
+            "Invalid response data type from coordinator (number.%s): %s has type %s",
             LOGABLE_ID,
             True,
+            type(True),
         )
 
     def test_float_is_rejected(self):

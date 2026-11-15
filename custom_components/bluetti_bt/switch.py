@@ -165,17 +165,17 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
             self._set_unavailable("Data is None")
             return
 
-        self._logger.debug(
-            "Updating state of %s", unique_id_logable(self._attr_unique_id)
-        )
         if not isinstance(self.coordinator.data, dict):
-            self._logger.debug(
+            self._logger.warning(
                 "Invalid data from coordinator (switch.%s)",
                 unique_id_logable(self._attr_unique_id),
             )
             self._set_unavailable("Invalid data")
             return
 
+        self._logger.debug(
+            "Updating state of %s", unique_id_logable(self._attr_unique_id)
+        )
         response_data = self.coordinator.data.get(self._response_key)
         if response_data is None:
             self._set_unavailable("No data")
@@ -183,9 +183,10 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
 
         if not isinstance(response_data, bool):
             self._logger.warning(
-                "Invalid response data type from coordinator (switch.%s): %s",
+                "Invalid response data type from coordinator (switch.%s): %s has type %s",
                 unique_id_logable(self._attr_unique_id),
                 response_data,
+                type(response_data),
             )
             self._set_unavailable("Invalid data type")
             return

@@ -322,9 +322,10 @@ class TestBluettiSwitchUpdate(unittest.TestCase):
 
         self.assert_unavailable_reported(switch, "Invalid data type")
         switch._logger.warning.assert_called_once_with(
-            "Invalid response data type from coordinator (switch.%s): %s",
+            "Invalid response data type from coordinator (switch.%s): %s has type %s",
             LOGABLE_ID,
             1,
+            type(1),
         )
 
     def test_true_reading_turns_the_switch_on(self):
