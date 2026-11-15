@@ -77,4 +77,4 @@ See [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib/tree/ha-deploymen
 
 ### Adding devices or fields
 
-Please use the issue template at [bluetti-bt-lib](https://github.com/Patrick762/bluetti-bt-lib?tab=readme-ov-file#supported-powerstations-and-data)
+Please use the issue template at [bluetti-bt-lib](https://github.com/sidieje/bluetti-bt-lib?tab=readme-ov-file#supported-powerstations-and-data)
