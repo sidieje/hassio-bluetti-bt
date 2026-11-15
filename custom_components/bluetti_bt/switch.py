@@ -42,7 +42,7 @@ async def async_setup_entry(
     if config is None:
         logger = logging.getLogger(__name__)
         logger.error("Unable to parse Bluetti config entry")
-        return
+        return None
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
