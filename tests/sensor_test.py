@@ -9,6 +9,13 @@ two kinds of accepted reading, numeric and enum.
 The incidental debug lines are deliberately not pinned here, so that aligning
 the log messages across the five platforms stays a one-file change per platform
 rather than a test change as well.
+
+complex is in the accepted-type list but is not exercised. No field parser in the
+library produces one, and a complex that did arrive would not survive Home
+Assistant: a sensor carrying a unit, state class or device class raises there for
+a non-numeric value, and one carrying none of them publishes "(1+2j)" as its
+state. A passing test would make that whitelist entry look deliberate, so it
+stays uncovered until finding L6 removes it.
 """
 
 import enum
