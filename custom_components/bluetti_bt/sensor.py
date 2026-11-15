@@ -293,13 +293,11 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
             return
 
         self._logger.debug(
-            "Coordinator data: %s",
-            self.coordinator.data,
+            "Updating state of %s", unique_id_logable(self._attr_unique_id)
         )
-
         response_data = self.coordinator.data.get(self._response_key)
         if response_data is None:
-            self._logger.debug("No data for available for (%s)", self._response_key)
+            self._logger.debug("No data for (%s)", self._response_key)
             self._set_unavailable("No data")
             return
 

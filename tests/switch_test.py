@@ -1,5 +1,9 @@
+"""Tests for the Bluetti switch entity: verified writes and state updates.
 
-"""Tests for verified writes in the Bluetti switch entity."""
+availability_test.py drives the shared availability debounce through unbound
+methods, but nothing exercised _handle_coordinator_update on this platform: the
+six guards that decide whether a reading is published at all ran untested.
+"""
 
 import unittest
 from types import SimpleNamespace
@@ -11,6 +15,10 @@ from bluetti_bt_lib import FieldName, build_device
 from bluetti_bt_lib.fields import PulseSwitchField
 
 from custom_components.bluetti_bt.switch import BluettiSwitch
+
+RESPONSE_KEY = "ctrl_system_on_off"
+UNIQUE_ID = "AABBCCDDEEFF_ctrl_system_on_off"
+LOGABLE_ID = "AABBCCXXXXXXXXXXctrl_system_on_off"
 
 
 class TestBluettiSwitchWrite(unittest.IsolatedAsyncioTestCase):
@@ -236,6 +244,143 @@ class TestStandbyPulseSwitch(unittest.IsolatedAsyncioTestCase):
                     FieldName.CTRL_SLEEP_MODE.value,
                     [field.name for field in device.get_sensor_fields()],
                 )
+
+
+class TestBluettiSwitchUpdate(unittest.TestCase):
+    """Test how a switch turns a coordinator cycle into a state."""
+
+    def make_switch(self, data, last_update_success: bool = True, field=None):
+        """Create a switch without initializing Home Assistant."""
+        switch = object.__new__(BluettiSwitch)
+        switch._logger = Mock()
+        switch._response_key = RESPONSE_KEY
+        switch._field = field or SimpleNamespace(name=RESPONSE_KEY)
+        switch._attr_unique_id = UNIQUE_ID
+        switch._attr_is_on = None
+        switch._attr_available = True
+        switch._attr_extra_state_attributes = {}
+        switch._unavailable_counter = 0
+        switch.coordinator = SimpleNamespace(
+            data=data,
+            last_update_success=last_update_success,
+            consecutive_failures=0,
+        )
+        # Record what each write would have published, so a state that is only
+        # set after the last write is caught rather than trusted.
+        switch.writes: list[bool | None] = []
+        switch.async_write_ha_state = Mock(
+            side_effect=lambda: switch.writes.append(switch._attr_is_on)
+        )
+        return switch
+
+    def assert_unavailable_reported(self, switch, cause: str) -> None:
+        """A rejected cycle should report the cause and never publish a state."""
+        self.assertEqual(
+            switch._attr_extra_state_attributes.get("unavailable_cause"), cause
+        )
+        switch.async_write_ha_state.assert_called_once_with()
+        self.assertEqual(switch.writes, [None])
+
+    def test_failed_poll_is_not_read_as_fresh_data(self):
+        """A failed cycle must not publish, even though data still holds the last good dict."""
+        switch = self.make_switch({RESPONSE_KEY: True}, last_update_success=False)
+
+        switch._handle_coordinator_update()
+
+        self.assert_unavailable_reported(switch, "Polling failed")
+
+    def test_none_data_reports_data_is_none(self):
+        """No dict at all is a distinct cause from an empty one."""
+        switch = self.make_switch(None)
+
+        switch._handle_coordinator_update()
+
+        self.assert_unavailable_reported(switch, "Data is None")
+        switch._logger.debug.assert_called_with("Data from coordinator is None")
+
+    def test_non_dict_data_reports_invalid_data(self):
+        """Coordinator data that is not a mapping cannot be indexed by key."""
+        switch = self.make_switch("not a dict")
+
+        switch._handle_coordinator_update()
+
+        self.assert_unavailable_reported(switch, "Invalid data")
+
+    def test_missing_key_reports_no_data(self):
+        """A station that answered without this control has no state to publish."""
+        switch = self.make_switch({"other_field": True})
+
+        switch._handle_coordinator_update()
+
+        self.assert_unavailable_reported(switch, "No data")
+
+    def test_non_bool_value_is_rejected_not_coerced(self):
+        """A register that answers 1 is not a bool, so it must not switch on."""
+        switch = self.make_switch({RESPONSE_KEY: 1})
+
+        switch._handle_coordinator_update()
+
+        self.assert_unavailable_reported(switch, "Invalid data type")
+        switch._logger.warning.assert_called_once_with(
+            "Invalid response data type from coordinator (switch.%s): %s has type %s",
+            LOGABLE_ID,
+            1,
+            type(1),
+        )
+
+    def test_true_reading_turns_the_switch_on(self):
+        switch = self.make_switch({RESPONSE_KEY: True})
+
+        switch._handle_coordinator_update()
+
+        self.assertIs(switch._attr_is_on, True)
+        self.assertTrue(switch._attr_available)
+        self.assertEqual(switch._unavailable_counter, 0)
+        self.assertEqual(switch._attr_extra_state_attributes, {})
+        # _set_available writes once before the state is known and the update
+        # writes again after it, so the last write is what Home Assistant keeps.
+        self.assertEqual(switch.writes, [None, True])
+
+    def test_false_reading_turns_the_switch_off(self):
+        """A reading of False is a real state, not a missing reading."""
+        switch = self.make_switch({RESPONSE_KEY: False})
+
+        switch._handle_coordinator_update()
+
+        self.assertIs(switch._attr_is_on, False)
+        self.assertTrue(switch._attr_available)
+        self.assertNotIn("unavailable_cause", switch._attr_extra_state_attributes)
+        self.assertEqual(switch.writes, [None, False])
+
+    def test_pulse_switch_state_comes_from_the_polled_register(self):
+        """A pulse switch reports its state in another register, and that is
+        what the poll carries, so the update path must not special-case it."""
+        field = PulseSwitchField(
+            FieldName.CTRL_SLEEP_MODE,
+            174,
+            pulse_address=2013,
+            pulse_value=2,
+            on_bit=8,
+            verification_delay=10.0,
+        )
+        switch = self.make_switch({field.name: True}, field=field)
+        switch._response_key = field.name
+
+        switch._handle_coordinator_update()
+
+        self.assertIs(switch._attr_is_on, True)
+
+    def test_a_good_cycle_clears_a_previous_outage(self):
+        """The counter from an outage must not keep the entity unavailable."""
+        switch = self.make_switch({RESPONSE_KEY: True})
+        switch._unavailable_counter = 3
+        switch._attr_extra_state_attributes = {"unavailable_cause": "No data"}
+
+        switch._handle_coordinator_update()
+
+        self.assertEqual(switch._unavailable_counter, 0)
+        self.assertEqual(switch._attr_extra_state_attributes, {})
+        self.assertTrue(switch.available)
 
 
 if __name__ == "__main__":
