@@ -437,6 +437,13 @@ class PollingCoordinator(DataUpdateCoordinator):
                 self.logger.debug("Offline retry failed: %s", err)
                 client = None
             finally:
+                # Not redundant with the outer finally at the end of this
+                # method, which also clears _retry_attempt_task. This one ends
+                # the attempt: _retry_attempt is what lets a retry connect
+                # while offline (see _async_get_client_unlocked), so clearing
+                # it here is what allows the refresh below to run instead of
+                # being refused as just another poll. The outer reset is the
+                # safety net for the paths that return before this try.
                 self._retry_attempt = False
 
             if client is not None and self.reader is not None:
@@ -805,6 +812,16 @@ class PollingCoordinator(DataUpdateCoordinator):
                 # A walk that lost a pack is a flaky read, so keep the last
                 # complete walk rather than showing a pack that is still
                 # there, and try again on the next cycle.
+                #
+                # _note_packs is deliberately skipped, which leaves _pack_num
+                # at its previous value for this cycle. Nothing outside
+                # _note_packs reads it: it exists only to notice a count
+                # change and pull the next walk forward, and _pack_due_at is
+                # already set to now here, which is more urgent than that
+                # change detection could have made it. The walk accepted after
+                # PACK_WALK_RETRIES refreshes _pack_num unconditionally, so the
+                # value is stale for one cycle at most and no entity's
+                # exposure or availability depends on it.
                 self._pack_retries += 1
                 self._pack_due_at = monotonic()
                 data.update(self._pack_values)

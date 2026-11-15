@@ -46,7 +46,7 @@ async def async_setup_entry(
     config = FullDeviceConfig.from_dict(entry.data)
     if config is None:
         logging.getLogger(__name__).error("Unable to parse Bluetti config entry")
-        return
+        return None
 
     coordinator = hass.data[DOMAIN][entry.entry_id][DATA_COORDINATOR]
 
