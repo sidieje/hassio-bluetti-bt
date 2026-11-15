@@ -100,6 +100,8 @@ class BluettiBinarySensor(CoordinatorEntity, BinarySensorEntity):
         self._logger = logger
 
         e_name = f"{device_info.get('name')} {response_key}"
+        # Field register address; never read, since nothing here logs it. The
+        # writable platforms' `address` is a different thing: the MAC.
         self._address = address
         self._response_key = response_key
         self._unavailable_counter = 0

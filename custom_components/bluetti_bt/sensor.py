@@ -202,6 +202,9 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
 
         e_name = f"{base_name} {response_key}"
 
+        # Field register address. The writable platforms keep an `address`
+        # under the same name, but theirs is the MAC their log lines print;
+        # nothing here logs the register, so this is never read.
         self._address = address
         self._response_key = (
             f"pack_{pack_num}_{response_key}" if pack_num else response_key

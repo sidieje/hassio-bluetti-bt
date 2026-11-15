@@ -100,6 +100,8 @@ class BluettiSwitch(CoordinatorEntity, SwitchEntity):
         self._logger = logger
 
         e_name = f"{device_info.get('name')} {field.name}"
+        # Reads and writes both go through the coordinator, which owns the
+        # device, so this is kept only for the shared writable signature.
         self._bluetti_device = bluetti_device
         self._address = address
         self._field = field
