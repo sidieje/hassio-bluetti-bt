@@ -10,7 +10,9 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - uses: actions/stale@v5
+      # v11 still declares every input used below, so the bump is a no-op for
+      # this configuration.
+      - uses: actions/stale@v11
         with:
           days-before-issue-stale: 30
           days-before-issue-close: 14
