@@ -87,31 +87,26 @@ async def async_setup_entry(
             else get_category(field_name, writable=field.is_writeable())
         )
 
-        if unit is not None:
-            sensors_to_add.append(
-                BluettiSensor(
-                    coordinator,
-                    device_info,
-                    field.address,
-                    field.name,
-                    unit_of_measurement=unit,
-                    device_class=device_class,
-                    state_class=state_class,
-                    category=category,
-                    logger=logger,
-                )
+        # Unit, device class and state class are three independent properties of
+        # a Home Assistant sensor, so all three are passed through whatever the
+        # lookup tables returned. Branching on the unit used to drop the other
+        # two along with it, which no current field relies on but which would
+        # silently discard the metadata of a future unitless reading that is
+        # still classifiable. The pack entities below have always passed all
+        # three unconditionally.
+        sensors_to_add.append(
+            BluettiSensor(
+                coordinator,
+                device_info,
+                field.address,
+                field.name,
+                unit_of_measurement=unit,
+                device_class=device_class,
+                state_class=state_class,
+                category=category,
+                logger=logger,
             )
-        else:
-            sensors_to_add.append(
-                BluettiSensor(
-                    coordinator,
-                    device_info,
-                    field.address,
-                    field.name,
-                    category=category,
-                    logger=logger,
-                )
-            )
+        )
 
     # Pack fields
     # The library polls each pack and returns its values as pack_N_<field>
@@ -304,10 +299,14 @@ class BluettiSensor(CoordinatorEntity, SensorEntity):
             self._set_unavailable("No data")
             return
 
+        # complex is deliberately not on this list. Python treats it as a
+        # number, but a Home Assistant sensor state cannot hold one: the
+        # entity either publishes it as text or raises out of
+        # async_write_ha_state when the state machinery tries to float() it.
+        # No library field produces one, so there is nothing to preserve.
         if (
             not isinstance(response_data, int)
             and not isinstance(response_data, float)
-            and not isinstance(response_data, complex)
             and not isinstance(response_data, Decimal)
             and not isinstance(response_data, Enum)
             and not isinstance(response_data, str)
